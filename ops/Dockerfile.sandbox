@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1
+FROM python:3.14.4-slim
+COPY requirements.lock /opt/requirements.lock
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then PIP_CERT=/run/secrets/proxy_ca pip install --no-cache-dir -r /opt/requirements.lock pytest==9.1.1 pytest-asyncio==1.4.0; else pip install --no-cache-dir -r /opt/requirements.lock pytest==9.1.1 pytest-asyncio==1.4.0; fi
+COPY ops/verify.py /opt/verify.py
+ENV PYTHONPYCACHEPREFIX=/tmp/pycache PYTHONUNBUFFERED=1
+USER 10001:10001
+CMD ["python", "/opt/verify.py"]

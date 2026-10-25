@@ -1,0 +1,165 @@
+[
+  {
+    "name": "one-blue-order",
+    "expectation": "SUCCESS",
+    "clientRequest": {
+      "customerId": "cust-123",
+      "items": [
+        {
+          "sku": "sku-blue",
+          "quantity": 2
+        }
+      ]
+    },
+    "upstreamRequest": {
+      "buyer": {
+        "id": "cust-123"
+      },
+      "lines": [
+        {
+          "productCode": "sku-blue",
+          "count": 2
+        }
+      ]
+    },
+    "upstreamResponse": {
+      "purchase": {
+        "id": "ord-7001",
+        "state": "PLACED"
+      },
+      "pricing": {
+        "grandTotal": 1998
+      }
+    },
+    "clientResponse": {
+      "orderId": "ord-7001",
+      "status": "CONFIRMED",
+      "totalAmount": 1998
+    },
+    "upstreamStatus": 201,
+    "clientStatus": 201
+  },
+  {
+    "name": "array-order-preserved",
+    "expectation": "SUCCESS",
+    "clientRequest": {
+      "customerId": "cust-123",
+      "items": [
+        {
+          "sku": "sku-blue",
+          "quantity": 2
+        },
+        {
+          "sku": "sku-red",
+          "quantity": 3
+        }
+      ]
+    },
+    "upstreamRequest": {
+      "buyer": {
+        "id": "cust-123"
+      },
+      "lines": [
+        {
+          "productCode": "sku-blue",
+          "count": 2
+        },
+        {
+          "productCode": "sku-red",
+          "count": 3
+        }
+      ]
+    },
+    "upstreamResponse": {
+      "purchase": {
+        "id": "ord-7001",
+        "state": "PLACED"
+      },
+      "pricing": {
+        "grandTotal": 4995
+      }
+    },
+    "clientResponse": {
+      "orderId": "ord-7001",
+      "status": "CONFIRMED",
+      "totalAmount": 4995
+    },
+    "upstreamStatus": 201,
+    "clientStatus": 201
+  },
+  {
+    "name": "invalid-empty-items",
+    "expectation": "INVALID_REQUEST",
+    "clientRequest": {
+      "customerId": "cust-123",
+      "items": []
+    },
+    "upstreamRequest": {
+      "buyer": {
+        "id": "cust-123"
+      },
+      "lines": [
+        {
+          "productCode": "sku-blue",
+          "count": 2
+        }
+      ]
+    },
+    "upstreamResponse": {
+      "purchase": {
+        "id": "ord-7001",
+        "state": "PLACED"
+      },
+      "pricing": {
+        "grandTotal": 1998
+      }
+    },
+    "clientResponse": {
+      "orderId": "ord-7001",
+      "status": "CONFIRMED",
+      "totalAmount": 1998
+    },
+    "upstreamStatus": 201,
+    "clientStatus": 400
+  },
+  {
+    "name": "unknown-upstream-state",
+    "expectation": "UPSTREAM_INVALID",
+    "clientRequest": {
+      "customerId": "cust-123",
+      "items": [
+        {
+          "sku": "sku-blue",
+          "quantity": 2
+        }
+      ]
+    },
+    "upstreamRequest": {
+      "buyer": {
+        "id": "cust-123"
+      },
+      "lines": [
+        {
+          "productCode": "sku-blue",
+          "count": 2
+        }
+      ]
+    },
+    "upstreamResponse": {
+      "purchase": {
+        "id": "ord-7001",
+        "state": "PAID"
+      },
+      "pricing": {
+        "grandTotal": 1998
+      }
+    },
+    "clientResponse": {
+      "orderId": "ord-7001",
+      "status": "CONFIRMED",
+      "totalAmount": 1998
+    },
+    "upstreamStatus": 201,
+    "clientStatus": 502
+  }
+]

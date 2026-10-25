@@ -1,0 +1,94 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Synthetic Orders v1",
+    "version": "v1"
+  },
+  "paths": {
+    "/v1/orders": {
+      "post": {
+        "operationId": "createV1",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "customerId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "sku": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "sku",
+                        "quantity"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "customerId",
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "orderId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "status": {
+                      "type": "string",
+                      "minLength": 1,
+                      "enum": [
+                        "CONFIRMED"
+                      ]
+                    },
+                    "totalAmount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "x-unit": "USD_CENTS"
+                    }
+                  },
+                  "required": [
+                    "orderId",
+                    "status",
+                    "totalAmount"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+FROM python:3.14.4-slim
+WORKDIR /app
+COPY requirements.lock ./
+COPY scripts/install_oasdiff.py /opt/install_oasdiff.py
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then PIP_CERT=/run/secrets/proxy_ca pip install --no-cache-dir -r requirements.lock; else pip install --no-cache-dir -r requirements.lock; fi
+RUN --mount=type=secret,id=proxy_ca python /opt/install_oasdiff.py --directory /usr/local/bin --ca-file /run/secrets/proxy_ca
+COPY src ./src
+COPY packages ./packages
+COPY docs ./docs
+COPY LICENSE ./LICENSE
+ARG APP_COMMIT_SHA=development
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+RUN useradd --uid 10001 --create-home bridge && mkdir /artifacts && chown 10001:10001 /artifacts && chmod 700 /artifacts
+ENV PYTHONPATH=/app/src CONTRACTBRIDGE_ROOT=/app PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+USER 10001:10001
+CMD ["python", "-m", "uvicorn", "contractbridge.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-access-log"]

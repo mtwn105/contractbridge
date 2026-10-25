@@ -1,0 +1,8 @@
+FROM docker:27.5.1-cli AS docker
+FROM python:3.14.4-slim
+COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
+WORKDIR /app
+COPY ops/worker.py /app/worker.py
+COPY src/contractbridge /app/src/contractbridge
+ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+CMD ["python", "/app/worker.py"]

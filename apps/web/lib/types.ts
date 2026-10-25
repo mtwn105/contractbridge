@@ -1,0 +1,8 @@
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type Rule = { op: string; from?: string; to?: string; fields?: Rule[]; values?: Record<string, string>; value?: Json; requiresHumanApproval?: boolean; reason?: string };
+export type Plan = { planVersion: string; sourceOperation: { method: string; path: string }; targetOperation: { method: string; path: string }; requestMappings: Rule[]; responseMappings: Rule[]; http: { upstreamSuccessStatus: number; clientSuccessStatus: number }; unresolvedQuestions: string[] };
+export type Issue = { key: string; message: string; reviewRequired: boolean };
+export type Build = { id: string; status: string; tests?: number; artifactHash?: string; error?: string; pythonVersion?: string; runtime?: { hostPort?: number; baseUrl?: string }; stages?: { name: string; passed: boolean; durationMs?: number }[] };
+export type Migration = { id: string; title: string; revision: number; state: string; createdAt: string; specs: Record<string, Json>; fixtures: { name: string; clientRequest: Json }[]; plan: Plan | null; diff: { engine: string; version: string; changes: { direction: string; pointer: string; kind: string; detail: string }[] } | null; issues: Issue[]; reviews: Record<string, string>; builds: Build[]; pendingJob?: string; model?: { provider?: string; model?: string; liveInference?: boolean; operatorEdited?: boolean; latencyMs?: number; inputTokens?: number; outputTokens?: number } | null; fixtureResults: { name: string; passed: boolean; detail: string }[] };
+export type Summary = Pick<Migration, "id" | "title" | "state" | "createdAt">;
+export type Demo = { oldSpec: string; newSpec: string; missingFieldSpec: string; fixtures: Json[]; referencePlan: Plan };

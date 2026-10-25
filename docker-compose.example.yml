@@ -1,0 +1,79 @@
+services:
+  provider-api:
+    build:
+      context: .
+      dockerfile: examples/provider/Dockerfile
+    command:
+    - --version
+    - v1
+    - --version-file
+    - /config/provider.json
+    volumes:
+    - ./examples/provider:/config:ro
+    networks:
+    - adapters
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    ports:
+    - 127.0.0.1:18081:8080
+  shopping-api:
+    build:
+      context: .
+      dockerfile: examples/shopping/Dockerfile
+      secrets:
+      - proxy_ca
+      args:
+        APP_COMMIT_SHA: ${APP_COMMIT_SHA:-development}
+    environment:
+      ALLOW_SYNTHETIC_PROBES: '1'
+      APP_SENTRY_DSN: ${APP_SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_RELEASE: shopping-example@${APP_COMMIT_SHA:-development}
+    networks:
+    - control
+    read_only: true
+    tmpfs:
+    - /tmp:rw,size=32m,uid=10001,gid=10001
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')
+      interval: 4s
+      timeout: 3s
+      retries: 20
+    env_file:
+    - .local/examples.env
+  control-plane:
+    environment:
+      INTEGRATIONS_FILE: /integrations/shopping/integration.json
+      INTEGRATIONS_ROOT: /integrations
+      UPSTREAM_ALLOWLIST: ${UPSTREAM_ALLOWLIST:-http://provider-api:8080}
+      AUTO_MITIGATE: '1'
+      VERIFICATION_ORIGINS: http://shopping-api:8080
+      VERIFICATION_CREDENTIALS: EXAMPLE_APPLICATION_TOKEN
+      ALLOW_SYNTHETIC_PROBES: '1'
+    volumes:
+    - ./examples:/integrations:ro
+    env_file:
+    - .local/examples.env
+  worker:
+    environment:
+      UPSTREAM_ALLOWLIST: ${UPSTREAM_ALLOWLIST:-http://provider-api:8080}
+      DEFAULT_UPSTREAM: http://provider-api:8080
+  web:
+    env_file:
+    - .local/examples.env
+    environment:
+      SHOP_API_URL: http://shopping-api:8080

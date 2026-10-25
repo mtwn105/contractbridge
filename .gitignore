@@ -1,0 +1,75 @@
+# Private configuration (publish only the documented template).
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local accounts, agent state, original planning, and implementation notes.
+/.aws/
+/.ssh/
+/.agents/
+/.codex/
+/.local/
+/AGENTS.md
+/CONTRACTBRIDGE.md
+/docs/submission-*.md
+/docs/demo-storyboard.md
+/examples/provider/provider.json
+
+# Generated evidence stays local; commit only the documented template.
+/docs/evidence/
+/artifacts/
+/test-results/
+/playwright-report/
+*.log
+*.zip
+*.webm
+*.mp4
+*.har
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# Python environments, caches, and build output.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+/build/
+/dist/
+/htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# JavaScript dependencies and generated bundles.
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# IDE and operating-system metadata.
+.idea/
+.vscode/
+*.iml
+**/target/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

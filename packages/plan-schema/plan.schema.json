@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "copy",
+            "rename",
+            "nest",
+            "flatten",
+            "array_map",
+            "constant",
+            "enum_map",
+            "reject_if_missing"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(/[A-Za-z_][A-Za-z0-9_]*)+$",
+          "maxLength": 512
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^(/[A-Za-z_][A-Za-z0-9_]*)+$",
+          "maxLength": 512
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "values": {
+          "type": "object",
+          "maxProperties": 100,
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {},
+        "requiresHumanApproval": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    }
+  },
+  "required": [
+    "planVersion",
+    "sourceOperation",
+    "targetOperation",
+    "requestMappings",
+    "responseMappings",
+    "http",
+    "unresolvedQuestions"
+  ],
+  "properties": {
+    "planVersion": {
+      "const": "1.0"
+    },
+    "sourceOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path"
+      ],
+      "properties": {
+        "method": {
+          "const": "POST"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9_/-]+$",
+          "maxLength": 256
+        }
+      }
+    },
+    "targetOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path"
+      ],
+      "properties": {
+        "method": {
+          "const": "POST"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9_/-]+$",
+          "maxLength": 256
+        }
+      }
+    },
+    "requestMappings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    },
+    "responseMappings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstreamSuccessStatus",
+        "clientSuccessStatus"
+      ],
+      "properties": {
+        "upstreamSuccessStatus": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 299
+        },
+        "clientSuccessStatus": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 299
+        }
+      }
+    },
+    "unresolvedQuestions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    }
+  }
+}

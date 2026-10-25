@@ -1,0 +1,233 @@
+name: contractbridge
+services:
+  db:
+    image: postgres:18.0
+    environment:
+      POSTGRES_USER: bridge
+      POSTGRES_DB: contractbridge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/bootstrap.sh first}
+    volumes:
+    - postgres:/var/lib/postgresql
+    networks:
+    - control
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U bridge -d contractbridge
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  ollama:
+    image: ollama/ollama:0.34.4
+    volumes:
+    - models:/root/.ollama
+    environment:
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    networks:
+    - control
+  control-plane:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.api
+      secrets:
+      - proxy_ca
+    environment:
+      DATABASE_URL: postgresql://bridge:${POSTGRES_PASSWORD}@db:5432/contractbridge
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Run scripts/bootstrap.sh first}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:4b}
+      UPSTREAM_ALLOWLIST: ${UPSTREAM_ALLOWLIST:-}
+      GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ORG: ${SENTRY_ORG:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-contractbridge@0.1.0}
+      ARTIFACT_ROOT: /artifacts
+      GATEWAY_SIGNING_SECRET: ${GATEWAY_SIGNING_SECRET:?Run scripts/prepare_env.py
+        first}
+      INTEGRATIONS_FILE: ${INTEGRATIONS_FILE:-}
+      INTEGRATIONS_ROOT: ${INTEGRATIONS_ROOT:-}
+      DUAL_REPAIR: ${DUAL_REPAIR:-1}
+      AUTO_MITIGATE: ${AUTO_MITIGATE:-0}
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      INCIDENT_TRIGGER: ${INCIDENT_TRIGGER:-gateway}
+      SENTRY_WEBHOOK_SECRET: ${SENTRY_WEBHOOK_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      VERIFICATION_ORIGINS: ${VERIFICATION_ORIGINS:-}
+      VERIFICATION_CREDENTIALS: ${VERIFICATION_CREDENTIALS:-}
+      ALLOW_SYNTHETIC_PROBES: ${ALLOW_SYNTHETIC_PROBES:-0}
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-staging}
+      VERIFICATION_SAMPLES: ${VERIFICATION_SAMPLES:-3}
+      VERIFICATION_INTERVAL: ${VERIFICATION_INTERVAL:-2}
+    volumes:
+    - artifacts:/artifacts
+    ports:
+    - 127.0.0.1:8000:8080
+    networks:
+    - control
+    - adapters
+    read_only: true
+    tmpfs:
+    - /tmp:rw,size=64m,uid=10001,gid=10001
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health')
+      interval: 4s
+      timeout: 3s
+      retries: 25
+  worker:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.worker
+    environment:
+      ARTIFACT_ROOT: /artifacts
+      ARTIFACT_VOLUME: contractbridge_artifacts
+      UPSTREAM_ALLOWLIST: ${UPSTREAM_ALLOWLIST:-}
+      ADAPTER_NETWORK: contractbridge_adapters
+      DEFAULT_UPSTREAM: ${DEFAULT_UPSTREAM:-}
+    volumes:
+    - artifacts:/artifacts
+    - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+    - control
+    depends_on:
+      control-plane:
+        condition: service_healthy
+  ingress:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.ingress
+      secrets:
+      - proxy_ca
+    ports:
+    - 127.0.0.1:18080:8080
+    networks:
+    - control
+    - adapters
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+  web:
+    build:
+      context: apps/web
+      args:
+        NEXT_PUBLIC_SENTRY_DSN: ${SENTRY_WEB_DSN:-}
+        NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+        NEXT_PUBLIC_SENTRY_RELEASE: ${SENTRY_RELEASE:-contractbridge@0.1.0}
+        SENTRY_ORG: ${SENTRY_ORG:-}
+        SENTRY_PROJECT: ${SENTRY_PROJECT:-contractbridge-web}
+      secrets:
+      - proxy_ca
+      - sentry_auth_token
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8080
+      SENTRY_DSN: ${SENTRY_WEB_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-contractbridge@0.1.0}
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Run scripts/bootstrap.sh first}
+    ports:
+    - 127.0.0.1:3000:3000
+    networks:
+    - control
+    depends_on:
+      control-plane:
+        condition: service_healthy
+  sandbox:
+    image: contractbridge-sandbox:local
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.sandbox
+      secrets:
+      - proxy_ca
+    profiles:
+    - tools
+  temporal:
+    image: temporalio/temporal:1.9.1
+    command:
+    - server
+    - start-dev
+    - --ip
+    - 0.0.0.0
+    - --headless
+    - --ui-disable-news-fetch
+    - --db-filename
+    - /home/temporal/temporal.db
+    volumes:
+    - temporal:/home/temporal
+    networks:
+    - control
+    healthcheck:
+      test:
+      - CMD
+      - temporal
+      - operator
+      - cluster
+      - health
+      - --address
+      - 127.0.0.1:7233
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  orchestrator:
+    build:
+      context: .
+      dockerfile: ops/Dockerfile.api
+      secrets:
+      - proxy_ca
+    command:
+    - python
+    - -m
+    - contractbridge.orchestration
+    environment:
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Run scripts/prepare_env.py first}
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      CONTROL_PLANE_URL: http://control-plane:8080
+    networks:
+    - control
+    read_only: true
+    tmpfs:
+    - /tmp:rw,size=64m,uid=10001,gid=10001
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+volumes:
+  postgres: null
+  models: null
+  artifacts:
+    name: contractbridge_artifacts
+  temporal: {}
+networks:
+  control: null
+  adapters:
+    name: contractbridge_adapters
+    internal: true
+secrets:
+  sentry_auth_token:
+    file: .local/sentry-auth-token
+  proxy_ca:
+    file: ${CODEX_PROXY_CERT:-/etc/ssl/certs/ca-certificates.crt}

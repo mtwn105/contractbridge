@@ -1,0 +1,28 @@
+[
+  {
+    "id": "b6d78c19-ce1b-59e4-82b5-a98585595e3d",
+    "name": "Shopping checkout",
+    "upstreamBaseUrl": "http://provider-api:8080",
+    "specPath": "/openapi.json",
+    "sourceSpecFile": "../orders-v1-to-v2/openapi-v1.yaml",
+    "fixturesFile": "../orders-v1-to-v2/fixtures/golden.json",
+    "fixtureSource": "synthetic",
+    "autoRepair": true,
+    "autoPublishDraft": true,
+    "dualRepair": true,
+    "mitigationPolicyFile": "mitigation-policy.json",
+    "client": {
+      "kind": "python-declarative",
+      "modulePath": "examples/shopping/client.py",
+      "bundlePath": "examples/shopping/repair.json"
+    },
+    "application": {
+      "baseUrl": "http://shopping-api:8080",
+      "credentialEnv": "EXAMPLE_APPLICATION_TOKEN",
+      "releasePath": "/release",
+      "probePath": "/probe",
+      "environment": "staging"
+    },
+    "sentryProject": "contractbridge-shop"
+  }
+]

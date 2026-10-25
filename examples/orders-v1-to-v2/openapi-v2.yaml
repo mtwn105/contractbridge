@@ -1,0 +1,121 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Synthetic Orders v2",
+    "version": "v2"
+  },
+  "paths": {
+    "/v2/purchases": {
+      "post": {
+        "operationId": "createV2",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "buyer": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  },
+                  "lines": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "productCode": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "productCode",
+                        "count"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "buyer",
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "purchase": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "state": {
+                          "type": "string",
+                          "minLength": 1,
+                          "enum": [
+                            "PLACED"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "state"
+                      ]
+                    },
+                    "pricing": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "grandTotal": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "x-unit": "USD_CENTS"
+                        }
+                      },
+                      "required": [
+                        "grandTotal"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "purchase",
+                    "pricing"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

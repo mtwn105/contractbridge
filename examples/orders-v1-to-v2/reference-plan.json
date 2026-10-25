@@ -1,0 +1,64 @@
+{
+  "planVersion": "1.0",
+  "sourceOperation": {
+    "method": "POST",
+    "path": "/v1/orders"
+  },
+  "targetOperation": {
+    "method": "POST",
+    "path": "/v2/purchases"
+  },
+  "requestMappings": [
+    {
+      "op": "copy",
+      "from": "/customerId",
+      "to": "/buyer/id"
+    },
+    {
+      "op": "array_map",
+      "from": "/items",
+      "to": "/lines",
+      "fields": [
+        {
+          "op": "copy",
+          "from": "/sku",
+          "to": "/productCode"
+        },
+        {
+          "op": "copy",
+          "from": "/quantity",
+          "to": "/count"
+        }
+      ]
+    }
+  ],
+  "responseMappings": [
+    {
+      "op": "copy",
+      "from": "/purchase/id",
+      "to": "/orderId"
+    },
+    {
+      "op": "enum_map",
+      "from": "/purchase/state",
+      "to": "/status",
+      "values": {
+        "PLACED": "CONFIRMED"
+      },
+      "requiresHumanApproval": true,
+      "reason": "Lifecycle equivalence requires operator confirmation."
+    },
+    {
+      "op": "copy",
+      "from": "/pricing/grandTotal",
+      "to": "/totalAmount"
+    }
+  ],
+  "http": {
+    "upstreamSuccessStatus": 201,
+    "clientSuccessStatus": 201
+  },
+  "unresolvedQuestions": [
+    "Does PLACED mean the same lifecycle state as CONFIRMED?"
+  ]
+}
