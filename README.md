@@ -25,25 +25,60 @@ The synthetic shop is an optional example stack under `examples/`.
 ## How it works
 
 ```mermaid
-flowchart TD
-    App[Registered application] --> Gateway[Scoped monitored gateway]
-    Gateway --> Provider[Allowed upstream API]
-    Gateway -. contract failure .-> Incident[Persisted incident]
-    Sentry[Sentry event alert] -. signed trigger .-> Incident
-    Incident --> Workflow[Temporal repair workflow]
-    Workflow --> Agent[Gemma investigation]
-    Provider -. current OpenAPI .-> Agent
-    Agent --> Mapping[Validated mapping artifact]
-    Mapping --> Runtime[Temporary deterministic bridge]
-    Mapping --> Patch[Permanent client patch / draft PR]
-    Runtime --> Provider
-    GitHub[Signed merge + deployment events] --> Workflow
-    Workflow --> Probe[Authorized native synthetic probes]
-    Probe --> Retire[Retire temporary rule]
+flowchart LR
+    subgraph clients["Clients"]
+        OP["Operator browser"]
+        APP["Registered application"]
+    end
+
+    subgraph control["control network — private"]
+        WEB["web<br/>Next.js console + shop proxy"]
+        API["control-plane<br/>operator API + scoped gateway"]
+        DB[("PostgreSQL<br/>connections · incidents · audit")]
+        GEMMA["Ollama<br/>gemma3:4b"]
+        TEMP["Temporal<br/>durable workflow"]
+        ORCH["orchestrator<br/>phase activities"]
+        WORKER["worker<br/>Docker socket"]
+        ING["ingress<br/>UUID adapter proxy"]
+    end
+
+    subgraph isolated["no-network sandbox"]
+        SBX["sandbox container<br/>compile + pytest"]
+    end
+
+    subgraph adapters["adapters network — internal"]
+        ADAPTER["approved adapter<br/>deterministic translation"]
+    end
+
+    subgraph external["External services"]
+        UP["Upstream API"]
+        SENTRY["Sentry"]
+        GH["GitHub"]
+    end
+
+    OP -->|operator token| WEB
+    WEB --> API
+    APP -->|scoped gateway token| API
+    API -->|one upstream POST| UP
+    API <--> DB
+    API -->|mapping prompt| GEMMA
+    API -->|start / signal| TEMP
+    TEMP <--> ORCH
+    ORCH -->|phase step| API
+    API -->|build job| WORKER
+    WORKER -->|docker create| SBX
+    WORKER -->|start + health check| ADAPTER
+    API -->|route BRIDGE| ADAPTER
+    ADAPTER --> UP
+    ING -->|UUID-addressed adapter| ADAPTER
+    API -->|draft PR| GH
+    SENTRY -->|signed alert| API
+    API -.->|ids only| SENTRY
 ```
 
-The model never sits on the live request path. See the
-[low-level design](docs/low-level-design.md) for sequences and state machines.
+The model never sits on the live request path. Only the worker holds the Docker
+socket; adapters and the verification sandbox run in separate isolation domains.
+See the [low-level design](docs/low-level-design.md) for sequences and state machines.
 
 ## Safety model
 
