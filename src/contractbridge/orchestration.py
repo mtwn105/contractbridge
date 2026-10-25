@@ -80,7 +80,7 @@ async def start_repair(settings, identifier):
         identifier,
         id="contractbridge-repair-" + identifier,
         task_queue=TASK_QUEUE,
-        id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+        id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
         id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
     )
 
