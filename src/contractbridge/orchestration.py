@@ -17,10 +17,15 @@ TASK_QUEUE = "contractbridge-repairs"
 class RepairWorkflow:
     def __init__(self):
         self.changed = True
+        self.review_decision = None
 
     @workflow.signal
     def wake(self):
         self.changed = True
+
+    @workflow.signal
+    def review(self, value: dict):
+        self.review_decision = value
 
     @workflow.run
     async def run(self, identifier: str):
@@ -36,6 +41,15 @@ class RepairWorkflow:
         result = await phase("investigate")
         if not result.get("supported"):
             return "UNSUPPORTED"
+        # No runtime change happens until an operator approves the verified
+        # candidate. A rejection feeds the review comment back into the model.
+        while True:
+            await workflow.wait_condition(lambda: self.review_decision is not None)
+            decision = self.review_decision
+            self.review_decision = None
+            if (decision or {}).get("decision") == "approve":
+                break
+            await phase("revise")
         # Both derive from the same immutable, tested mapping. The temporary
         # mitigation is attempted before publication, never after merge alone.
         mitigation = await phase("mitigate")
@@ -75,6 +89,16 @@ async def wake_repair(settings, identifier):
     if settings.temporal_address:
         client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
         await client.get_workflow_handle("contractbridge-repair-" + identifier).signal("wake")
+
+
+async def signal_review(settings, identifier, decision):
+    if not settings.temporal_address:
+        return False
+    client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
+    await client.get_workflow_handle("contractbridge-repair-" + identifier).signal(
+        "review", {"decision": decision}
+    )
+    return True
 
 
 def phase_activity(settings, api_url):

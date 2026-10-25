@@ -1,7 +1,0 @@
-{
-  "oldHash": "e1ae0b852ab892a4c7ba04a6d0372db0a0ddd48bf25f33d5776196a7de50818f",
-  "newHash": "4a2512665c39d3e92f06d47b8469b8de37272d9983b4ad0d251259c7a321351a",
-  "fixturesHash": "a4184e009f132c09863d2c587b3185b2e8aa56148ba13daa56b5c43e7595f25b",
-  "behaviorHash": "e4a803d4d10c5198fc80eb528c5ea1e1a1e6f25fbca209628d3b6a56803c6a4d",
-  "semanticReview": "For this synthetic fixture pair only, purchase and order identity, customer identity, item order, and USD cents are preserved; PLACED and CONFIRMED denote the same documented synthetic lifecycle state."
-}

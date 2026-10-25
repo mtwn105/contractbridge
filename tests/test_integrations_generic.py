@@ -1,4 +1,3 @@
-import copy
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -9,9 +8,7 @@ import pytest
 from contractbridge.api import create_app
 from contractbridge.config import Settings
 from contractbridge.integrations import baseline_client, gateway_token, validate_client
-from contractbridge.mitigation_policy import behavior, require_authorization
-from contractbridge.storage import Conflict
-from contractbridge.util import canonical, digest
+from contractbridge.util import canonical
 
 ROOT = Path(__file__).resolve().parents[1]
 OPERATOR = "generic-integration-operator-token-32-chars"
@@ -252,44 +249,3 @@ def test_declarative_client_target_is_generic_and_repository_relative():
                 "bundlePath": "config/a.json",
             }
         )
-
-
-def test_runtime_mitigation_policy_binds_exact_contracts_fixtures_and_behavior(bundle):
-    migration = {
-        "specs": {"old": bundle["oldSpec"], "new": bundle["newSpec"]},
-        "fixtures": bundle["fixtures"],
-        "plan": copy.deepcopy(bundle["plan"]),
-    }
-    policy = {
-        "oldHash": digest(migration["specs"]["old"]),
-        "newHash": digest(migration["specs"]["new"]),
-        "fixturesHash": digest(migration["fixtures"]),
-        "behaviorHash": digest(behavior(migration["plan"])),
-        "semanticReview": "Reviewed against provider documentation and independent synthetic fixtures.",
-    }
-    settings = Settings(
-        ROOT, ROOT / ".local/tests-unused", "sqlite:///:memory:", OPERATOR, auto_mitigate=True
-    )
-    assert require_authorization(settings, {"mitigationAuthorization": policy}, migration) == policy
-
-    explanatory_edit = copy.deepcopy(migration)
-    explanatory_edit["plan"]["requestMappings"][0]["reason"] = "Equivalent explanation"
-    require_authorization(settings, {"mitigationAuthorization": policy}, explanatory_edit)
-
-    semantic_edit = copy.deepcopy(migration)
-    enum_rule = next(rule for rule in semantic_edit["plan"]["responseMappings"] if rule["op"] == "enum_map")
-    enum_rule["values"] = {**enum_rule["values"], "PLACED": "invented-business-state"}
-    with pytest.raises(Conflict, match="exceeds the reviewed semantic policy"):
-        require_authorization(settings, {"mitigationAuthorization": policy}, semantic_edit)
-
-    changed_fixture = copy.deepcopy(migration)
-    changed_fixture["fixtures"][0]["clientResponse"] = {
-        **changed_fixture["fixtures"][0]["clientResponse"],
-        "unexpected": True,
-    }
-    with pytest.raises(Conflict, match="exceeds the reviewed semantic policy"):
-        require_authorization(settings, {"mitigationAuthorization": policy}, changed_fixture)
-
-    disabled = Settings(ROOT, ROOT / ".local/tests-unused", "sqlite:///:memory:", OPERATOR)
-    with pytest.raises(Conflict, match="recorded integration-specific semantic policy"):
-        require_authorization(disabled, {"mitigationAuthorization": policy}, migration)

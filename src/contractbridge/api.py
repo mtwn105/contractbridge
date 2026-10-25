@@ -317,7 +317,11 @@ def create_app(
         from .dual_repair import DualRepair
 
         value = await body(request)
-        shape(value, {"phase": {"enum": ["investigate", "mitigate", "permanent", "verify"]}}, ["phase"])
+        shape(
+            value,
+            {"phase": {"enum": ["investigate", "revise", "mitigate", "permanent", "verify"]}},
+            ["phase"],
+        )
         controller = DualRepair(monitor)
         return JSONResponse(await getattr(controller, value["phase"])(str(request.path_params["id"])))
 

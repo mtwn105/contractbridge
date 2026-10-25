@@ -17,10 +17,10 @@ declarative client patch. This prevents two independent agents from guessing
 different semantics. The model produces only mapping data; trusted code produces
 and verifies both artifacts.
 
-Temporary activation remains conservative: semantic review, passing tests, and
-exact artifact approval are mandatory. Automatic activation is possible only for
-an integration-specific policy bound to exact contract, fixture, and normalized
-behavior hashes.
+Temporary activation remains conservative: an operator must approve the exact
+verified candidate, tests must pass, and activation names the exact built artifact.
+There is no integration-specific mitigation allowlist. A rejection records the
+operator's comment and feeds it back into the next model proposal.
 
 Permanent repair may publish a real draft PR only to a registered repository/base
 and declared client files. It never merges or deploys.
@@ -39,6 +39,6 @@ a hosted installation needs production Temporal and database operations.
 ## Interface simplification
 
 The primary UI is an integration and incident console: state, agent progress,
-mapping, tests, mitigation, and PR/deployment status. Semantic review remains in
-the PR and audit record instead of a large in-app workbench. The optional shop is
-demonstration input, not product identity.
+mapping, tests, operator review, mitigation, and PR/deployment status. The console
+records an approval or a revision comment for each verified candidate; the
+optional shop is demonstration input, not product identity.

@@ -9,7 +9,6 @@ import httpx
 
 from .contracts import Contract, validate_payload
 from .integrations import baseline_client, validate_client
-from .mitigation_policy import require_authorization
 from .storage import Conflict, now
 from .util import canonical, digest, strict_loads
 
@@ -25,6 +24,8 @@ class DualRepair:
             state.update(fields)
             if phase:
                 state.update(phase=phase, updatedAt=now())
+            if fields.get("message"):
+                v["message"] = fields["message"]
 
         return self.resources.update("incidents", identifier, "DUAL_" + (phase or "UPDATED"), update)
 
@@ -50,15 +51,28 @@ class DualRepair:
     async def mitigate(self, identifier):
         incident, migration, _ = await self.monitor.package(identifier)
         c = self.resources.get("connections", incident["connectionId"])
-        try:
-            policy = require_authorization(self.settings, c, migration)
-        except Conflict as exc:
+        review = (incident.get("lifecycle") or {}).get("review") or {}
+        candidate = incident.get("candidate") or {}
+        if (
+            review.get("decision") != "approve"
+            or review.get("candidateHash") != candidate.get("artifactHash")
+        ):
             self.record(
                 identifier,
                 "AWAITING_RUNTIME_REVIEW",
-                mitigation={"status": "REVIEW_REQUIRED", "message": str(exc)},
+                mitigation={
+                    "status": "REVIEW_REQUIRED",
+                    "message": "Approve the verified candidate in the control plane to activate a temporary bridge",
+                },
             )
             return {"active": False}
+        comment = (review.get("comment") or "").strip()
+        if len(comment) < 10:
+            comment = (
+                "Approved by the operator in the ContractBridge control plane "
+                "after reviewing the verified candidate."
+            )
+        comment = comment[:1000]
         if c["route"].get("migrationId") == migration["id"] and c["route"]["mode"] == "BRIDGE":
             build_id = c["route"]["buildId"]
             current = self.resources.get("incidents", identifier).get("lifecycle") or {}
@@ -72,6 +86,7 @@ class DualRepair:
                         "buildId": build_id,
                         "artifactHash": self.workflow.find_build(migration, build_id)["artifactHash"],
                     },
+                    message="The temporary bridge is active for the exact approved artifact",
                 )
             return {"active": True}
         if migration.get("pendingJob"):
@@ -82,13 +97,14 @@ class DualRepair:
         if migration["state"] not in ("APPROVED_FOR_BUILD", "READY_FOR_APPROVAL", "ACTIVE"):
             issues = self.workflow.public(migration)["issues"]
             migration = self.workflow.approve(
-                migration["id"], {i["key"]: policy["semanticReview"] for i in issues}, migration["revision"]
+                migration["id"], {i["key"]: comment for i in issues}, migration["revision"]
             )
             self.record(
                 identifier,
                 semanticReview={
-                    "actor": "configured-integration-policy",
-                    "policyHash": digest(policy),
+                    "actor": "operator",
+                    "comment": comment,
+                    "candidateHash": candidate.get("artifactHash"),
                     "inputHash": self.workflow.fingerprint(migration),
                 },
             )
@@ -101,7 +117,8 @@ class DualRepair:
                 identifier,
                 "ACTIVATING",
                 artifactApproval={
-                    "actor": "configured-integration-policy",
+                    "actor": "operator",
+                    "comment": comment,
                     "artifactHash": build["artifactHash"],
                     "inputHash": build["inputHash"],
                     "tests": build["tests"],
@@ -128,8 +145,33 @@ class DualRepair:
                     "artifactHash"
                 ],
             },
+            message="The temporary bridge is active for the exact approved artifact",
         )
         return {"active": True}
+
+    async def revise(self, identifier):
+        incident = self.resources.get("incidents", identifier)
+        review = (incident.get("lifecycle") or {}).get("review") or {}
+        candidate = incident.get("candidate") or {}
+        if (
+            review.get("decision") != "reject"
+            or review.get("candidateHash") != candidate.get("artifactHash")
+        ):
+            raise Conflict("Request changes for the current verified candidate before revising")
+        await self.monitor.revise(
+            identifier,
+            review.get("comment") or "",
+            candidate["artifactHash"],
+        )
+        updated = self.resources.get("incidents", identifier)
+        if updated["state"] == "READY_FOR_REVIEW" and updated.get("candidate"):
+            self.record(
+                identifier,
+                "CANDIDATE_VERIFIED",
+                sharedMappingHash=updated["candidate"]["inputHash"],
+            )
+            return {"revised": True}
+        return {"revised": False}
 
     async def permanent(self, identifier, manual=False):
         incident, migration, files = await self.monitor.package(identifier)

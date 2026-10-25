@@ -11,7 +11,8 @@ declarative mapping.
 One verified mapping drives two repairs:
 
 1. **Temporary runtime repair:** a deterministic compatibility proxy can restore
-   traffic after semantic review, isolated tests, and exact-artifact approval.
+   traffic only after an operator approves the verified candidate, isolated tests
+   pass, and the built artifact matches those approved inputs.
 2. **Permanent code repair:** the same mapping produces a reviewable client patch
    and, when configured, a real GitHub draft pull request.
 
@@ -85,10 +86,12 @@ See the [low-level design](docs/low-level-design.md) for sequences and state mac
 - Gemma proposes JSON data; generated model code is never executed.
 - Trusted templates and a fixed interpreter implement supported mappings.
 - A failed POST is sent upstream exactly once and is never replayed automatically.
-- Runtime activation needs recorded semantic review, passing isolated tests, and
-  approval of the exact artifact hash.
-- Automatic mitigation additionally needs an integration-specific policy matching
-  the exact old contract, current contract, fixtures, and normalized behavior.
+- Runtime activation needs an operator approval for the exact verified candidate,
+  passing isolated tests, and a build from those approved inputs. The control plane
+  never activates a bridge without an explicit approve request for the current
+  candidate.
+- A rejection records the operator's review comment and feeds it back into the
+  next Gemma proposal; the model still cannot invent fields outside the schema.
 - GitHub publication creates a draft PR. ContractBridge does not merge or deploy it.
 - Merge alone never removes the temporary bridge.
 - Request and response bodies, credentials, prompts, and model output are excluded
@@ -112,7 +115,8 @@ Open <http://localhost:3000>. The generated operator token remains in the ignore
 root `.env`. The generic core starts with no provider authorized and no integration
 registered. Add allowed upstream origins to `UPSTREAM_ALLOWLIST`, then register an
 integration through the operator API or a trusted `INTEGRATIONS_FILE`. The console
-then presents the resulting operational state; it does not edit trusted policy.
+then presents the resulting operational state and lets the operator approve or
+reject each verified candidate.
 
 | Interface | Local address |
 | --- | --- |
@@ -139,7 +143,9 @@ data.
    an actual contract-drift incident without replaying the POST.
 3. Follow the incident in the operator console while ContractBridge fetches the
    provider's current OpenAPI document, invokes Gemma, and runs isolated tests.
-4. If GitHub is configured for this integration, inspect the resulting draft PR.
+4. Review the verified mapping. Approve it to build and activate the temporary
+   bridge, or reject it with a comment; Gemma uses that comment for a new mapping.
+5. If GitHub is configured for this integration, inspect the resulting draft PR.
    Otherwise, download the real patch artifact; no PR is claimed.
 
 Stop the corresponding stack with:
@@ -148,8 +154,8 @@ Stop the corresponding stack with:
 ./scripts/stop.sh --example shopping
 ```
 
-The example's exact mitigation policy authorizes only its reviewed synthetic
-contract and fixtures. It is not a general permission to auto-activate repairs.
+The example is generic input, not a special-cased workflow: the same review,
+comment, and activation path applies to any registered integration.
 
 ## Register an integration
 
@@ -160,8 +166,11 @@ Each integration declares:
 - an optional operation pair and independent synthetic or sanitized fixtures;
 - an optional declarative Python client target for the permanent patch;
 - an optional repository/base branch, monitored Sentry project, and deployed
-  application verification endpoint;
-- an optional exact mitigation policy.
+  application verification endpoint.
+
+Every candidate is reviewed in the console: approve it to build and activate the
+temporary bridge, or reject it with a comment that Gemma applies to the next
+mapping.
 
 See [`examples/shopping/integration.json`](examples/shopping/integration.json) for
 a complete, explicitly synthetic registration file and

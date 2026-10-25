@@ -54,7 +54,6 @@ def runtime_routes(monitor, body, revision):
                 "baseBranch": {"type": "string"},
                 "client": {"type": "object"},
                 "application": {"type": "object"},
-                "mitigationPolicy": {"type": "object"},
                 "sentryProject": {"type": "string"},
                 "dualRepair": {"type": "boolean"},
             },
@@ -113,7 +112,6 @@ def runtime_routes(monitor, body, revision):
                 "baseBranch": {"type": "string", "maxLength": 120},
                 "client": {"type": "object"},
                 "application": {"type": "object"},
-                "mitigationPolicy": {"type": "object"},
                 "sentryProject": {"type": "string", "maxLength": 120},
                 "dualRepair": {"type": "boolean"},
             },
@@ -200,6 +198,41 @@ def runtime_routes(monitor, body, revision):
         value = resources.update("incidents", identifier(request), "REPAIR_RETRIED", reset, revision(request))
         return JSONResponse(
             value, status_code=202, background=BackgroundTask(monitor.dispatch_repair, value["id"])
+        )
+
+    async def review(request):
+        data = await body(request)
+        shape(
+            data,
+            {
+                "decision": {"enum": ["approve", "reject"]},
+                "comment": {"type": "string", "maxLength": 1000},
+                "candidateHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            },
+            ["decision", "comment", "candidateHash"],
+        )
+        comment = data["comment"].strip()
+        if data["decision"] == "reject" and len(comment) < 10:
+            raise ValueError("Describe the correction required before requesting changes")
+        incident = await monitor.review(
+            identifier(request), data["decision"], comment, data["candidateHash"]
+        )
+        c = resources.get("connections", incident["connectionId"])
+        if monitor.settings.dual_repair and c.get("dualRepair"):
+            from .orchestration import signal_review
+
+            try:
+                await signal_review(monitor.settings, incident["id"], data["decision"])
+                return JSONResponse(incident, status_code=202)
+            except Exception:
+                # No live durable workflow: apply the decision directly instead.
+                pass
+        return JSONResponse(
+            incident,
+            status_code=202,
+            background=BackgroundTask(
+                monitor.apply_review, incident["id"], data["decision"]
+            ),
         )
 
     async def patch(request):
@@ -290,6 +323,7 @@ def runtime_routes(monitor, body, revision):
         Route(prefix + "/incidents", incidents),
         Route(prefix + "/incidents/{id:uuid}", incident),
         Route(prefix + "/incidents/{id:uuid}/retry", retry, methods=["POST"]),
+        Route(prefix + "/incidents/{id:uuid}/review", review, methods=["POST"]),
         Route(prefix + "/incidents/{id:uuid}/patch", patch),
         Route(prefix + "/incidents/{id:uuid}/pr-preview", preview),
         Route(prefix + "/incidents/{id:uuid}/publish", publish, methods=["POST"]),

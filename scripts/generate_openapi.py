@@ -46,6 +46,7 @@ schemas = {
             "diff": {},
             "model": {},
             "reviews": {"type": "object"},
+            "reviewFeedback": {"type": "string"},
             "pendingJob": {"type": ["string", "null"]},
         },
     },
@@ -268,7 +269,6 @@ connection_fields = {
     "baseBranch": {"type": "string", "maxLength": 120},
     "client": {"type": "object"},
     "application": {"type": "object"},
-    "mitigationPolicy": {"type": "object"},
     "sentryProject": {"type": "string", "maxLength": 120},
 }
 operation("/connections", "get", "List monitored connections, approved origins, and GitHub readiness")
@@ -353,6 +353,20 @@ operation(
     obj({}),
     status=202,
 )
+operation(
+    "/incidents/{id}/review",
+    "post",
+    "Approve the verified candidate or reject it with a correction comment that the model applies to a new mapping",
+    obj(
+        {
+            "decision": {"enum": ["approve", "reject"]},
+            "comment": {"type": "string", "maxLength": 1000},
+            "candidateHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        },
+        ["decision", "comment", "candidateHash"],
+    ),
+    status=202,
+)
 operation("/incidents/{id}/patch", "get", "Download the actual verified candidate code patch")
 paths["/incidents/{id}/patch"]["get"]["responses"]["200"]["content"] = {
     "text/x-diff": {"schema": {"type": "string"}}
@@ -413,7 +427,7 @@ operation(
     "/dual/{id}/step",
     "post",
     "Execute one idempotent durable-workflow activity",
-    obj({"phase": {"enum": ["investigate", "mitigate", "permanent", "verify"]}}, ["phase"]),
+    obj({"phase": {"enum": ["investigate", "revise", "mitigate", "permanent", "verify"]}}, ["phase"]),
 )
 paths["/dual/{id}/step"]["post"]["parameters"] = [
     p for p in paths["/dual/{id}/step"]["post"]["parameters"] if p["name"] != "If-Match"

@@ -60,7 +60,6 @@ services:
       INTEGRATIONS_FILE: /integrations/shopping/integration.json
       INTEGRATIONS_ROOT: /integrations
       UPSTREAM_ALLOWLIST: ${UPSTREAM_ALLOWLIST:-http://provider-api:8080}
-      AUTO_MITIGATE: '1'
       VERIFICATION_ORIGINS: http://shopping-api:8080
       VERIFICATION_CREDENTIALS: EXAMPLE_APPLICATION_TOKEN
       ALLOW_SYNTHETIC_PROBES: '1'

@@ -10,7 +10,6 @@
     "autoRepair": true,
     "autoPublishDraft": true,
     "dualRepair": true,
-    "mitigationPolicyFile": "mitigation-policy.json",
     "client": {
       "kind": "python-declarative",
       "modulePath": "examples/shopping/client.py",

@@ -27,11 +27,20 @@ type Candidate = {
   verificationMode: string;
 };
 
+type Review = {
+  decision?: string;
+  comment?: string;
+  candidateHash?: string;
+  at?: string;
+  actor?: string;
+};
+
 type Lifecycle = {
   phase?: string;
   updatedAt?: string;
   sharedMappingHash?: string;
   message?: string;
+  review?: Review;
   mitigation?: { status?: string; artifactHash?: string; buildId?: string; message?: string };
   permanent?: { status?: string; patchHash?: string; tests?: number; applicationFiles?: string[] };
   merge?: { sha?: string };
@@ -56,6 +65,8 @@ type Incident = {
   candidate?: Candidate | null;
   publication?: { url?: string; status?: string; artifactHash?: string; patchHash?: string; number?: number } | null;
   lifecycle?: Lifecycle | null;
+  review?: Review;
+  reviewHistory?: Review[];
   migration?: Migration;
 };
 
@@ -97,6 +108,9 @@ function time(value?: string | null) {
 function severity(connection: Connection, incident?: Incident | null) {
   if (incident?.lifecycle?.phase === "RESOLVED") return { className: "ok", text: "resolved" };
   if (connection.route.mode === "BRIDGE") return { className: "warn", text: "mitigated" };
+  if (incident?.lifecycle?.phase === "REVISING") return { className: "info", text: "revising mapping" };
+  if (incident?.lifecycle?.phase === "APPROVING") return { className: "info", text: "activating bridge" };
+  if (incident?.state === "READY_FOR_REVIEW") return { className: "warn", text: "review required" };
   if (connection.state === "DEGRADED" || incident?.error) return { className: "critical", text: "degraded" };
   if (incident?.running) return { className: "info", text: "investigating" };
   return { className: "ok", text: "healthy" };
@@ -163,7 +177,7 @@ function IncidentSummary({ incident, connection, sentryUrl }: { incident: Incide
 function RepairLanes({ incident, connection, github }: { incident: Incident; connection: Connection; github: StatusResponse["github"] }) {
   const life = incident.lifecycle;
   const bridgeActive = connection.route.mode === "BRIDGE";
-  const runtimeState = life?.mitigation?.status || (bridgeActive ? "ACTIVE" : life?.phase === "AWAITING_RUNTIME_REVIEW" ? "REVIEW_REQUIRED" : "PENDING");
+  const runtimeState = life?.mitigation?.status || (bridgeActive ? "ACTIVE" : life?.phase === "AWAITING_RUNTIME_REVIEW" ? "REVIEW_REQUIRED" : ["APPROVING", "REVISING", "REVIEW_ACTION_FAILED"].includes(life?.phase || "") ? life?.phase : incident.state === "READY_FOR_REVIEW" ? "REVIEW_REQUIRED" : "PENDING");
   const permanentState = life?.permanent?.status || incident.publication?.status || (incident.candidate ? "PREPARING" : "PENDING");
   return <section className="repair-lanes" aria-label="Repair paths">
     <article className="repair-lane runtime-lane"><header><span>B</span><div><h2>Runtime mitigation</h2><p>Temporary compatibility bridge</p></div><StateBadge state={runtimeState} tone={bridgeActive ? "warning" : "neutral"} /></header><dl>
@@ -176,6 +190,56 @@ function RepairLanes({ incident, connection, github }: { incident: Incident; con
       <div><dt>Pull request</dt><dd>{incident.publication?.url ? <a href={incident.publication.url} target="_blank" rel="noreferrer">#{incident.publication.number || "open"} <Icon name="external" size={12} /></a> : github.configured ? "Pending" : "GitHub not configured"}</dd></div>
       <div><dt>Merged commit</dt><dd><code>{life?.merge?.sha || "—"}</code></dd></div>
     </dl>{incident.publicationError ? <p className="lane-error" role="alert">{incident.publicationError}</p> : null}</article>
+  </section>;
+}
+
+function ReviewPanel({ incident, onReviewed }: { incident: Incident; onReviewed: () => Promise<void> }) {
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [error, setError] = useState("");
+  const candidate = incident.candidate;
+  const phase = incident.lifecycle?.phase;
+  const review = incident.lifecycle?.review;
+  const currentReview = review && candidate && review.candidateHash === candidate.artifactHash ? review : null;
+  const active = incident.state === "READY_FOR_REVIEW" && candidate && !["REVISING", "APPROVING"].includes(phase || "") && currentReview?.decision !== "approve";
+
+  async function submit(decision: "approve" | "reject") {
+    if (!candidate) return;
+    if (decision === "reject" && comment.trim().length < 10) {
+      setError("Describe the correction required before requesting changes.");
+      return;
+    }
+    setBusy(decision); setError("");
+    try {
+      const response = await fetch(`/api/bridge/incidents/${incident.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, comment: comment.trim(), candidateHash: candidate.artifactHash }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.title || "Review request failed");
+      setComment("");
+      await onReviewed();
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(null); }
+  }
+
+  return <section className="ops-panel review-panel" aria-labelledby="review-heading">
+    <header><div><h2 id="review-heading">Operator review</h2><p>Approve the exact verified candidate, or send a correction back to the model</p></div>{candidate ? <code>{candidate.artifactHash.slice(0, 12)}</code> : <span>No candidate</span>}</header>
+    {review ? <div className={`review-decision ${review.decision || "pending"}`} role="status">
+      <strong>{review.decision === "approve" ? "Approved" : review.decision === "reject" ? "Changes requested" : "Review recorded"}</strong>
+      {review.comment ? <p>{review.comment}</p> : null}
+      <small>{time(review.at)}{review.candidateHash && candidate && review.candidateHash !== candidate.artifactHash ? " · applies to an earlier candidate" : ""}</small>
+    </div> : null}
+    {active ? <div className="review-form">
+      <label htmlFor="review-comment">Review comment</label>
+      <textarea id="review-comment" rows={3} maxLength={1000} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="What should change? Rejections send this comment back to Gemma for a new mapping. Approvals may leave it blank." />
+      {error ? <p className="review-error" role="alert">{error}</p> : null}
+      <div className="review-actions">
+        <button type="button" className="approve" disabled={Boolean(busy)} onClick={() => void submit("approve")}>{busy === "approve" ? "Activating…" : "Approve & activate bridge"}</button>
+        <button type="button" className="reject" disabled={Boolean(busy)} onClick={() => void submit("reject")}>{busy === "reject" ? "Requesting changes…" : "Request changes"}</button>
+      </div>
+    </div> : <p className="panel-empty">{phase === "REVISING" ? "Gemma is applying the review comment to a new mapping." : phase === "APPROVING" ? "The approved candidate is being built and activated." : candidate ? "Approval is recorded for this candidate." : "A verified candidate is required before review."}</p>}
   </section>;
 }
 
@@ -306,7 +370,7 @@ export function RepairConsole() {
       <main className="ops-main">{error ? <div className="ops-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="close" size={15} /></button></div> : null}
         {!connections.length ? <section className="setup-empty"><h1>No integrations registered</h1><p>Register an allowlisted upstream and its baseline contract, then obtain the connection-scoped gateway URL.</p><ol><li>Set <code>UPSTREAM_ALLOWLIST</code> for the provider origin.</li><li>Call <code>POST /api/v1/connections/discover</code> with the integration name, upstream URL and OpenAPI path.</li><li>Call <code>POST /api/v1/connections/&lt;id&gt;/access</code> and configure the returned scoped gateway in the client.</li></ol></section> : !selected || !snapshot ? <div className="ops-loading" role="status">Loading integration…</div> : <>
           <section className="integration-bar"><div><div className="title-row"><h1>{selected.name}</h1><StateBadge state={severity(selected, incident).text} tone={severity(selected, incident).className} /></div><div className="endpoint"><span>POST</span><code>{selected.sourcePath || "—"}</code><span className="route-arrow">via</span><StateBadge state={selected.route.mode} tone={selected.route.mode === "BRIDGE" ? "warning" : "success"} /></div></div><dl><div><dt>Connection ID</dt><dd><code>{selected.id}</code></dd></div><div><dt>Success / failure</dt><dd>{selected.successCount} / {selected.failureCount}</dd></div><div><dt>Sentry project</dt><dd>{selected.sentryProject || "—"}</dd></div><div><dt>Repository</dt><dd>{selected.repository || snapshot.github.repository || "—"}</dd></div></dl></section>
-          {incident ? <><IncidentSummary incident={incident} connection={selected} sentryUrl={snapshot.sentryUrl} /><RepairLanes incident={incident} connection={selected} github={snapshot.github} /><div className="ops-columns"><Activity events={events} /><Evidence incident={incident} /></div><MappingTable migration={incident.migration} /></> : <NoIncident connection={selected} />}
+          {incident ? <><IncidentSummary incident={incident} connection={selected} sentryUrl={snapshot.sentryUrl} /><RepairLanes incident={incident} connection={selected} github={snapshot.github} />{incident.candidate ? <ReviewPanel incident={incident} onReviewed={async () => { if (selectedId) await refresh(selectedId); }} /> : null}<div className="ops-columns"><Activity events={events} /><Evidence incident={incident} /></div><MappingTable migration={incident.migration} /></> : <NoIncident connection={selected} />}
         </>}
       </main>
     </div>

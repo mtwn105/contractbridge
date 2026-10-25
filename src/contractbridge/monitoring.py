@@ -102,10 +102,8 @@ class RuntimeMonitor:
     def create(self, value, identifier=None):
         origin = self.origin(value["upstreamBaseUrl"])
         from .integrations import validate_application, validate_client
-        from .mitigation_policy import validate_policy
 
         client = validate_client(value["client"]) if value.get("client") else None
-        policy = validate_policy(value["mitigationPolicy"]) if value.get("mitigationPolicy") else None
         application = validate_application(value["application"]) if value.get("application") else None
         if application:
             if (
@@ -160,7 +158,6 @@ class RuntimeMonitor:
                 "client": client,
                 "application": application,
                 "sentryProject": value.get("sentryProject"),
-                "mitigationAuthorization": policy,
                 "dualRepair": value.get("dualRepair", False),
             },
             identifier,
@@ -224,6 +221,7 @@ class RuntimeMonitor:
                     "builds",
                     "plan",
                     "reviews",
+                    "reviewFeedback",
                     "pendingJob",
                 )
             }
@@ -499,69 +497,7 @@ class RuntimeMonitor:
                 )
                 self.stage(identifier, "PROPOSING")
                 m = await self.run_job(m, "propose")
-                old, new_contract = self.workflow.contracts(m)
-                issues = inspect_plan(Plan.parse(m["plan"]), old, new_contract)
-                if any(not issue.reviewRequired for issue in issues):
-                    self.stage(
-                        identifier,
-                        "BLOCKED",
-                        message="The proposed mapping has unsupported or missing information; approval cannot override these blockers",
-                    )
-                    return
-                if not c["fixtures"]:
-                    self.stage(
-                        identifier,
-                        "NEEDS_FIXTURES",
-                        message="AI proposal is available. Add independent synthetic/sanitized verification fixtures before a candidate can be tested",
-                    )
-                    return
-                if not all(
-                    r.passed
-                    for r in verify_fixtures(
-                        Fixture.parse_many(c["fixtures"]), Plan.parse(m["plan"]), old, new_contract
-                    )
-                ):
-                    self.stage(
-                        identifier,
-                        "BLOCKED",
-                        message="The AI proposal does not satisfy the registered verification fixtures",
-                    )
-                    return
-                self.stage(identifier, "VERIFYING_CANDIDATE")
-                candidate_id = str(uuid4())
-                frozen = self.workflow.generator.generate(
-                    self.settings.artifacts / "builds" / candidate_id / "source",
-                    Plan.parse(m["plan"]),
-                    old,
-                    new_contract,
-                    Fixture.parse_many(c["fixtures"]),
-                    {},
-                    {**m["model"], "candidateOnly": True, "semanticReview": "PENDING"},
-                )
-                result = await self.workflow.runner.build(candidate_id, frozen["sourceHash"])
-                if (
-                    not result.get("passed")
-                    or result.get("sourceHash") != frozen["sourceHash"]
-                    or result.get("tests", 0) < len(c["fixtures"])
-                ):
-                    raise RuntimeError("Candidate verification report did not match frozen inputs")
-                await self.assert_current(m)
-                candidate = {
-                    **result,
-                    "id": candidate_id,
-                    "inputHash": frozen["inputHash"],
-                    "semanticReview": "PENDING",
-                    "activationApproved": False,
-                }
-                artifact_files(self.artifact(candidate_id), candidate["artifactHash"])
-                self.stage(
-                    identifier,
-                    "READY_FOR_REVIEW",
-                    candidate=candidate,
-                    message="The adapter passed isolated contract tests. Its mappings, verification evidence, and business assumptions are ready for review in a draft PR",
-                )
-                if not (self.settings.dual_repair and c.get("dualRepair")):
-                    await self.auto_publish(identifier)
+                await self._verify_candidate(identifier, c, m)
         except Exception as exc:
             capture_failure(exc, "runtime.repair")
             self.stage(
@@ -569,6 +505,167 @@ class RuntimeMonitor:
                 "FAILED",
                 error="Repair failed; inspect the provider specification, local model, or sandbox. Retry after correcting the cause",
                 errorCategory=type(exc).__name__,
+            )
+
+    async def _verify_candidate(self, identifier, c, m):
+        old, new_contract = self.workflow.contracts(m)
+        fixtures = Fixture.parse_many(m["fixtures"]) if m["fixtures"] else []
+        issues = inspect_plan(Plan.parse(m["plan"]), old, new_contract)
+        if any(not issue.reviewRequired for issue in issues):
+            self.stage(
+                identifier,
+                "BLOCKED",
+                message="The proposed mapping has unsupported or missing information; approval cannot override these blockers",
+            )
+            return False
+        if not fixtures:
+            self.stage(
+                identifier,
+                "NEEDS_FIXTURES",
+                message="AI proposal is available. Add independent synthetic/sanitized verification fixtures before a candidate can be tested",
+            )
+            return False
+        if not all(r.passed for r in verify_fixtures(fixtures, Plan.parse(m["plan"]), old, new_contract)):
+            self.stage(
+                identifier,
+                "BLOCKED",
+                message="The AI proposal does not satisfy the registered verification fixtures",
+            )
+            return False
+        self.stage(identifier, "VERIFYING_CANDIDATE")
+        candidate_id = str(uuid4())
+        frozen = self.workflow.generator.generate(
+            self.settings.artifacts / "builds" / candidate_id / "source",
+            Plan.parse(m["plan"]),
+            old,
+            new_contract,
+            fixtures,
+            {},
+            {**m["model"], "candidateOnly": True, "semanticReview": "PENDING"},
+        )
+        result = await self.workflow.runner.build(candidate_id, frozen["sourceHash"])
+        if (
+            not result.get("passed")
+            or result.get("sourceHash") != frozen["sourceHash"]
+            or result.get("tests", 0) < len(fixtures)
+        ):
+            raise RuntimeError("Candidate verification report did not match frozen inputs")
+        await self.assert_current(m)
+        candidate = {
+            **result,
+            "id": candidate_id,
+            "inputHash": frozen["inputHash"],
+            "semanticReview": "PENDING",
+            "activationApproved": False,
+        }
+        artifact_files(self.artifact(candidate_id), candidate["artifactHash"])
+        self.stage(
+            identifier,
+            "READY_FOR_REVIEW",
+            candidate=candidate,
+            message="The adapter passed isolated contract tests. Review the mapping and approve the exact candidate to build and route the temporary bridge",
+        )
+        if not (self.settings.dual_repair and c.get("dualRepair")):
+            await self.auto_publish(identifier)
+        return True
+
+    async def review(self, identifier, decision, comment, candidate_hash):
+        incident, _, _ = await self.package(identifier)
+        candidate = incident.get("candidate") or {}
+        if candidate.get("artifactHash") != candidate_hash:
+            raise Conflict("Review the exact verified candidate artifact")
+        review = {
+            "decision": decision,
+            "comment": comment,
+            "candidateHash": candidate_hash,
+            "actor": "operator",
+            "at": now(),
+        }
+
+        def claim(v):
+            if v["state"] != "READY_FOR_REVIEW" or not v.get("candidate"):
+                raise Conflict("The incident is not awaiting review")
+            if v["candidate"]["artifactHash"] != candidate_hash:
+                raise Conflict("The verified candidate changed; reload before reviewing")
+            if (v.get("lifecycle") or {}).get("phase") in ("APPROVING", "REVISING"):
+                raise Conflict("A review action is already in progress")
+            previous = (v.get("lifecycle") or {}).get("review") or {}
+            if previous.get("candidateHash") == candidate_hash and previous.get("decision") == "approve":
+                raise Conflict("This candidate is already approved")
+            v["reviewHistory"] = (v.get("reviewHistory") or [])[-9:] + [review]
+            v["review"] = review
+            v["lifecycle"] = {
+                **v.get("lifecycle", {}),
+                "phase": "APPROVING" if decision == "approve" else "REVISING",
+                "review": review,
+                "updatedAt": now(),
+            }
+            v["message"] = (
+                "Operator approved the verified candidate; the temporary bridge is being built and activated"
+                if decision == "approve"
+                else "Operator requested changes; the model is revising the mapping from the review comment"
+            )
+
+        return self.resources.update(
+            "incidents",
+            identifier,
+            "REVIEW_APPROVED" if decision == "approve" else "REVIEW_CHANGES_REQUESTED",
+            claim,
+        )
+
+    async def revise(self, identifier, comment, candidate_hash):
+        incident = self.resources.get("incidents", identifier)
+        if (incident.get("candidate") or {}).get("artifactHash") != candidate_hash:
+            raise Conflict("The reviewed candidate changed before the revision started")
+        c = self.resources.get("connections", incident["connectionId"])
+        try:
+            self.stage(
+                identifier,
+                "REVISING",
+                message="Applying the operator's review comment to a new mapping proposal",
+            )
+            m = self.workflow.store.get(incident["migrationId"])
+            m = self.workflow.store.mutate(
+                m["id"],
+                "REVIEW_COMMENT_RECORDED",
+                lambda v: v.update(reviewFeedback=comment[:2000]),
+                m["revision"],
+            )
+            m = await self.run_job(m, "propose")
+            c = self.resources.get("connections", c["id"])
+            await self._verify_candidate(identifier, c, m)
+        except Exception as exc:
+            capture_failure(exc, "runtime.revision")
+            self.stage(
+                identifier,
+                "FAILED",
+                error="Revision failed; inspect the local model or sandbox, then retry the incident",
+                errorCategory=type(exc).__name__,
+            )
+
+    async def apply_review(self, identifier, decision):
+        from .dual_repair import DualRepair
+
+        try:
+            controller = DualRepair(self)
+            if decision == "approve":
+                await controller.mitigate(identifier)
+            else:
+                await controller.revise(identifier)
+        except Exception as exc:
+            capture_failure(exc, "runtime.review")
+            self.resources.update(
+                "incidents",
+                identifier,
+                "REVIEW_ACTION_FAILED",
+                lambda v: v.update(
+                    message="Review action did not complete; inspect the local services and retry the incident",
+                    lifecycle={
+                        **v.get("lifecycle", {}),
+                        "phase": "REVIEW_ACTION_FAILED",
+                        "updatedAt": now(),
+                    },
+                ),
             )
 
     async def run_job(self, migration, kind, options=None):

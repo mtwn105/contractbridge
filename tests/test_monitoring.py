@@ -8,6 +8,7 @@ import pytest
 from contractbridge.analysis import structural_changes
 from contractbridge.api import create_app
 from contractbridge.config import Settings
+from contractbridge.dual_repair import DualRepair
 from contractbridge.models import Plan
 from contractbridge.monitoring import RuntimeMonitor
 from contractbridge.storage import Conflict, Store
@@ -26,16 +27,18 @@ class FixtureDiff:
 
 class FixturePlanner:
     def __init__(self, plan):
-        self.plan, self.calls = plan, 0
+        self.plan, self.calls, self.feedback = plan, 0, []
 
-    async def propose(self, *_):
+    async def propose(self, old, new, fixtures, feedback=""):
         self.calls += 1
+        self.feedback.append(feedback)
         return Plan.parse(self.plan), {'provider': 'fixture-not-ai', 'liveInference': False}
 
 
 class FixtureRunner:
     def __init__(self, root):
         self.root, self.calls = root, 0
+        self.activated = []
 
     async def build(self, identifier, source_hash):
         self.calls += 1
@@ -48,6 +51,13 @@ class FixtureRunner:
                     archive.write(path, path.relative_to(source))
         return {'passed': True, 'artifactHash': sha256_file(output / 'adapter.zip'), 'sourceHash': source_hash,
                 'tests': 8, 'verificationMode': 'test-double-not-a-container'}
+
+    async def activate(self, identifier, artifact_hash, upstream=None):
+        self.activated.append((identifier, artifact_hash, upstream))
+        return {'baseUrl': 'http://cb-proxy-' + identifier + ':8080'}
+
+    async def stop(self, identifier):
+        return {'passed': True}
 
 
 @pytest.fixture
@@ -95,6 +105,53 @@ async def test_working_traffic_breaks_and_creates_one_automatic_repair(monitored
     assert 'adapter.py' in await monitor.patch(incident_id)
     with pytest.raises(Conflict):
         await monitor.route(c['id'], m['id'], monitor.resources.get('connections', c['id'])['revision'])
+
+
+async def test_runtime_bridge_requires_operator_approval(monitored, bundle):
+    monitor, c, state, planner, runner = monitored
+    state['provider'] = Orders('v2')
+    incident, _ = monitor.record_failure(c['id'], 'HTTP_CONTRACT_MISMATCH', 404)
+    await monitor.repair(incident['id'])
+    i = monitor.resources.get('incidents', incident['id'])
+    assert i['state'] == 'READY_FOR_REVIEW' and i['candidate']
+    waiting = await DualRepair(monitor).mitigate(i['id'])
+    assert waiting == {'active': False}
+    assert monitor.resources.get('connections', c['id'])['route']['mode'] == 'DIRECT'
+
+    approved = await monitor.review(
+        i['id'], 'approve', 'Reviewed the mapping and fixture evidence.', i['candidate']['artifactHash']
+    )
+    assert approved['lifecycle']['phase'] == 'APPROVING'
+    assert approved['lifecycle']['review']['decision'] == 'approve'
+    with pytest.raises(Conflict, match="already in progress"):
+        await monitor.review(
+            i['id'], 'approve', 'Duplicate click should not activate twice.', i['candidate']['artifactHash']
+        )
+    await monitor.apply_review(i['id'], 'approve')
+    updated = monitor.resources.get('incidents', incident['id'])
+    assert monitor.resources.get('connections', c['id'])['route']['mode'] == 'BRIDGE'
+    assert updated['lifecycle']['mitigation']['status'] == 'ACTIVE'
+    assert updated['lifecycle']['semanticReview']['actor'] == 'operator'
+    assert runner.activated
+
+
+async def test_rejection_comment_is_fed_back_to_the_model(monitored, bundle):
+    monitor, c, state, planner, runner = monitored
+    state['provider'] = Orders('v2')
+    incident, _ = monitor.record_failure(c['id'], 'HTTP_CONTRACT_MISMATCH', 404)
+    await monitor.repair(incident['id'])
+    i = monitor.resources.get('incidents', incident['id'])
+    first = i['candidate']['artifactHash']
+    comment = 'Keep the item field order stable and map the lifecycle state explicitly.'
+    rejected = await monitor.review(i['id'], 'reject', comment, first)
+    assert rejected['lifecycle']['phase'] == 'REVISING'
+    await monitor.apply_review(i['id'], 'reject')
+    updated = monitor.resources.get('incidents', incident['id'])
+    assert updated['state'] == 'READY_FOR_REVIEW' and updated['candidate']
+    assert planner.calls == 2 and planner.feedback[-1] == comment
+    assert updated['lifecycle']['review']['candidateHash'] == first
+    assert updated['lifecycle']['phase'] == 'CANDIDATE_VERIFIED'
+    assert runner.calls == 2
 
 
 async def test_invalid_client_input_never_reaches_provider(monitored):

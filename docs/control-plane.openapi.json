@@ -1645,9 +1645,6 @@
                   "application": {
                     "type": "object"
                   },
-                  "mitigationPolicy": {
-                    "type": "object"
-                  },
                   "sentryProject": {
                     "type": "string",
                     "maxLength": 120
@@ -1775,9 +1772,6 @@
                     "type": "object"
                   },
                   "application": {
-                    "type": "object"
-                  },
-                  "mitigationPolicy": {
                     "type": "object"
                   },
                   "sentryProject": {
@@ -2680,6 +2674,106 @@
         }
       }
     },
+    "/incidents/{id}/review": {
+      "post": {
+        "summary": "Approve the verified candidate or reject it with a correction comment that the model applies to a new mapping",
+        "operationId": "post__incidents_id_review",
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision or state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current migration revision, optionally quoted",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "decision": {
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "candidateHash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "decision",
+                  "comment",
+                  "candidateHash"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/incidents/{id}/patch": {
       "get": {
         "summary": "Download the actual verified candidate code patch",
@@ -3204,6 +3298,7 @@
                   "phase": {
                     "enum": [
                       "investigate",
+                      "revise",
                       "mitigate",
                       "permanent",
                       "verify"
@@ -3434,6 +3529,9 @@
           "model": {},
           "reviews": {
             "type": "object"
+          },
+          "reviewFeedback": {
+            "type": "string"
           },
           "pendingJob": {
             "type": [

@@ -151,7 +151,7 @@ volume. Containers, Temporal workflows, and adapters are recreatable.
 | Signed Sentry/GitHub webhooks | `src/contractbridge/hooks.py` |
 | Revisioned aggregates + audit | `src/contractbridge/resources.py`, `storage.py` |
 | Integration registration, tokens, client targets | `src/contractbridge/integrations.py` |
-| Automatic-mitigation policy | `src/contractbridge/mitigation_policy.py` |
+| Operator review, revision feedback, review audit | `src/contractbridge/monitoring.py` |
 | Contract parsing / strict schema normalisation | `src/contractbridge/contracts.py` |
 | Deterministic transformation interpreter | `src/contractbridge/engine.py` |
 | Ingress for UUID-addressed adapters | `src/contractbridge/ingress.py` |
@@ -233,9 +233,7 @@ Representative documents (abridged):
   "generation": 0, "openIncidentId": null, "repairIncidentId": null,
   "baselineHash": "…", "autoPublishDraft": false,
   "client": { "kind": "python-declarative", "modulePath": "...", "bundlePath": "..." },
-  "application": { "baseUrl": "...", "credentialEnv": "…", "environment": "staging" },
-  "mitigationAuthorization": { "oldHash": "…", "newHash": "…", "fixturesHash": "…",
-                               "behaviorHash": "…", "semanticReview": "…" }
+  "application": { "baseUrl": "...", "credentialEnv": "…", "environment": "staging" }
 }
 
 // incidents
@@ -246,9 +244,9 @@ Representative documents (abridged):
   "candidate": { "artifactHash": "…", "inputHash": "…", "tests": 12,
                  "verificationMode": "isolated-docker", "semanticReview": "PENDING" },
   "lifecycle": {
-    "phase": "GITHUB_NOT_CONFIGURED",
+    "phase": "READY_FOR_REVIEW",
     "sharedMappingHash": "…",
-    "mitigation": { "status": "REVIEW_REQUIRED" },
+    "review": { "decision": "reject", "comment": "…", "candidateHash": "…" },
     "permanent":  { "status": "VERIFIED", "patchHash": "…", "applicationFiles": ["…"] }
   }
 }
@@ -283,8 +281,10 @@ Invariants the code enforces:
 4. **Activation names an exact artifact.** `workflow.submit("activate")` requires
    `state == READY_FOR_APPROVAL`, `confirmed is True`, and the SHA-256 of the
    on-disk `adapter.zip` to equal the approved hash.
-5. **Automatic mitigation needs a pinned policy.** The policy hashes must match
-   the exact old spec, new spec, fixtures, and normalised plan behaviour.
+5. **Runtime activation needs an operator decision.** The approve request names
+   the exact verified candidate hash. Rejection stores the free-text review
+   comment and the next proposal receives it as operator feedback; model output
+   still has to pass schema validation, fixture tests, and candidate verification.
 6. **A merged PR is not a deployment.** Retirement needs a successful deployment
    for the same commit and environment, then native bypass probes.
 7. **Generated code never runs on the host.** Builds execute in a container with
@@ -310,7 +310,7 @@ sequenceDiagram
     API->>API: validate upstream origin against UPSTREAM_ALLOWLIST
     API->>REG: parse sourceSpec, select sourcePath
     API->>API: validate fixtures against the client contract, reject secrets
-    API->>API: validate client target, application endpoints, mitigation policy
+    API->>API: validate client target and application endpoints
     API->>DB: create connection (baselineHash, route DIRECT, generation 0)
     API-->>OP: connection + gatewayPath + exampleRequest
 ```
@@ -460,46 +460,61 @@ sequenceDiagram
 A timeout or missing result fails the repair; the API never treats an unverified
 build as a pass.
 
-### 6.6 Runtime mitigation gate
+### 6.6 Operator review gate
 
 ```mermaid
 flowchart TD
-    A["Candidate verified<br/>READY_FOR_REVIEW"] --> B{"AUTO_MITIGATE enabled<br/>and policy present?"}
-    B -->|no| C["REVIEW_REQUIRED<br/>AWAITING_RUNTIME_REVIEW"]
-    B -->|yes| D{"policy hashes match<br/>old / new / fixtures / behaviour?"}
-    D -->|no| C
-    D -->|yes| E["approve with policy semantic review"]
-    E --> F["build from approved inputs"]
-    F --> G{"artifact hash equals<br/>approved build output?"}
-    G -->|no| H["Conflict, no activation"]
-    G -->|yes| I["activate build<br/>route = BRIDGE"]
-    I --> J["MITIGATED<br/>traffic through adapter"]
+    A["Candidate verified<br/>READY_FOR_REVIEW"] --> B{"Operator decision"}
+    B -->|approve current candidate hash| C["record operator review<br/>approve candidate hash"]
+    C --> D["build from approved inputs"]
+    D --> E{"artifact hash equals<br/>approved build output?"}
+    E -->|no| F["Conflict, no activation"]
+    E -->|yes| G["activate build<br/>route = BRIDGE"]
+    G --> H["MITIGATED<br/>traffic through adapter"]
+    B -->|reject with comment| I["record comment<br/>REVISING"]
+    I --> J["Gemma proposes a new mapping<br/>with the comment as feedback"]
+    J --> K["fixtures + isolated candidate verification"]
+    K --> A
 ```
 
-The policy is intentionally narrow. In the bundled example, a Gemma mapping whose
-normalised behaviour differs from the reviewed reference produces
-`REVIEW_REQUIRED` — that is the gate working, not a failure. Once a human or a
-matching policy authorises it:
+The gate is generic: no integration-specific hashes or allowlists. The operator
+sees the mapping, fixture evidence, and candidate artifact hash, then:
+
+- **Approve** records the operator comment (or a default approval note) as the
+  semantic review for every current issue, builds the trusted adapter from the
+  approved inputs, and routes traffic through the exact built artifact.
+- **Request changes** stores the comment on the incident, sends it to the model
+  as `operatorReviewFeedback`, and reruns proposal plus isolated verification.
+  The new candidate comes back to the same review screen.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant OP as Operator or policy
+    participant OP as Operator
+    participant UI as web console
     participant API as control-plane
-    participant MIG as workflow
+    participant WF as durable workflow
     participant SUP as worker
     participant GW as gateway
 
-    OP->>API: approve current exact inputs
-    API->>MIG: submit build (requires approvalHash == fingerprint)
-    API->>SUP: build(sourceHash)
-    SUP-->>API: passing report + artifact.zip
-    OP->>API: activate (confirmed, artifactHash)
-    API->>API: compare sha256(adapter.zip) with approved hash
-    API->>SUP: activate(buildId, artifactHash, upstream)
-    SUP-->>API: cb-proxy-buildId running on adapters
-    API->>API: connection route = BRIDGE, temporary=true
-    GW->>GW: subsequent calls target cb-proxy-buildId port 8080
+    OP->>UI: review mapping + write comment
+    UI->>API: POST /incidents/{id}/review (decision, comment, candidateHash)
+    alt approve
+        API->>API: verify candidate hash and current provider contract
+        API->>WF: signal review approve
+        WF->>WF: approve, build, activate
+        API->>SUP: build(sourceHash)
+        SUP-->>API: passing report + artifact.zip
+        API->>API: compare sha256(adapter.zip) with approved hash
+        API->>SUP: activate(buildId, artifactHash, upstream)
+        API->>API: connection route = BRIDGE, temporary=true
+        GW->>GW: subsequent calls target cb-proxy-buildId port 8080
+    else reject
+        API->>WF: signal review reject
+        WF->>WF: propose with operatorReviewFeedback
+        WF-->>API: new verified candidate
+        API-->>UI: READY_FOR_REVIEW with new mapping
+    end
 ```
 
 ### 6.7 Permanent application repair (draft PR)
@@ -638,13 +653,15 @@ stateDiagram-v2
     DETECTED --> INVESTIGATING
     INVESTIGATING --> UNSUPPORTED: blocked or no repair
     INVESTIGATING --> CANDIDATE_VERIFIED: candidate passed
-    CANDIDATE_VERIFIED --> MITIGATED: policy authorized and activated
-    CANDIDATE_VERIFIED --> AWAITING_RUNTIME_REVIEW: policy mismatch or disabled
+    CANDIDATE_VERIFIED --> AWAITING_REVIEW: operator review required
+    AWAITING_REVIEW --> APPROVING: approve candidate hash
+    AWAITING_REVIEW --> REVISING: reject with comment
+    REVISING --> CANDIDATE_VERIFIED: new mapping verified
+    APPROVING --> MITIGATED: exact artifact activated
     CANDIDATE_VERIFIED --> AWAITING_PUBLICATION_AUTHORIZATION: no draft authorization
     CANDIDATE_VERIFIED --> GITHUB_NOT_CONFIGURED: no repository or token
     CANDIDATE_VERIFIED --> CLIENT_TARGET_REQUIRED: no declarative client
     MITIGATED --> PR_OPEN: permanent PR created
-    AWAITING_RUNTIME_REVIEW --> PR_OPEN: permanent PR created
     AWAITING_PUBLICATION_AUTHORIZATION --> PR_OPEN: operator authorizes
     PR_OPEN --> PR_MERGED: merged receipt
     PR_MERGED --> DEPLOYED: successful deployment for same sha
@@ -710,6 +727,7 @@ Operator routes (bearer `OPERATOR_TOKEN`):
 | GET | `/api/v1/incidents` | list incidents |
 | GET | `/api/v1/incidents/{id}` | incident + candidate + mapping + evidence |
 | POST | `/api/v1/incidents/{id}/retry` | retry investigation |
+| POST | `/api/v1/incidents/{id}/review` | approve the verified candidate or reject it with a revision comment |
 | GET | `/api/v1/incidents/{id}/patch` | download the real code patch |
 | GET | `/api/v1/incidents/{id}/pr-preview` | preview PR files (no remote write) |
 | POST | `/api/v1/incidents/{id}/publish` | publish draft PR when authorized |
@@ -738,7 +756,6 @@ Web server proxies: `/api/bridge/**` (session cookie), `/api/shop/**` (shop toke
 | `INTEGRATIONS_FILE`, `INTEGRATIONS_ROOT` | Boot-time registrations, confined to root |
 | `OLLAMA_URL`, `OLLAMA_MODEL` | Inference endpoint and model identity |
 | `DUAL_REPAIR` | Use the Temporal dual lifecycle instead of single repair |
-| `AUTO_MITIGATE` | Permit policy-matched automatic runtime activation |
 | `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE` | Durable workflow connection |
 | `INCIDENT_TRIGGER` | `gateway` starts from observed failure; `sentry` waits for webhook |
 | `SENTRY_WEBHOOK_SECRET`, `GITHUB_WEBHOOK_SECRET` | HMAC verification |
@@ -767,7 +784,9 @@ model timeout, 300 s sandbox timeout, 12 min per workflow phase.
 | Missing fixtures | `NEEDS_FIXTURES` | no untested candidate |
 | Sandbox timeout | `FAILED`, retry available | no unverified artifact accepted |
 | Provider changes mid-repair | `Conflict` before approval/publish/activate | mapping never applied to a different contract |
-| Policy hash mismatch | `REVIEW_REQUIRED` | no automatic activation |
+| No operator decision | bridge stays `DIRECT` | no silent activation |
+| Stale candidate hash | `Conflict`, reload review | approval names an exact artifact |
+| Reject without a comment | 422 | revision needs actionable feedback |
 | GitHub baseline differs | `Conflict`, no branch written | no clobbering application code |
 | Merge without deployment | bridge stays `ACTIVE` | merge alone retires nothing |
 | Failed bypass probe | `VERIFY_FAILED`, bridge stays `ACTIVE` | no premature cleanup |

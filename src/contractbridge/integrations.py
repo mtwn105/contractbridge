@@ -122,7 +122,6 @@ def load_integrations(monitor):
             "targetPath",
             "sourceSpecFile",
             "fixturesFile",
-            "mitigationPolicyFile",
             "fixtureSource",
             "autoRepair",
             "autoPublishDraft",
@@ -143,7 +142,6 @@ def load_integrations(monitor):
         for key, output in [
             ("sourceSpecFile", "sourceSpec"),
             ("fixturesFile", "fixtures"),
-            ("mitigationPolicyFile", "mitigationPolicy"),
         ]:
             if key in data:
                 source = (config.parent / data.pop(key)).resolve()

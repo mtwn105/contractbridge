@@ -234,7 +234,10 @@ class Workflow:
                     result = await self.diff.analyze(old, new)
                 elif job["kind"] == "propose":
                     result = await self.planner.propose(
-                        old, new, Fixture.parse_many(m["fixtures"]) if m["fixtures"] else []
+                        old,
+                        new,
+                        Fixture.parse_many(m["fixtures"]) if m["fixtures"] else [],
+                        m.get("reviewFeedback") or "",
                     )
                 elif job["kind"] == "build":
                     build_id = job["buildId"]

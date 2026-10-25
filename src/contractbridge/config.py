@@ -25,7 +25,6 @@ class Settings:
     github_base: str = "main"
     sentry_org: str = ""
     dual_repair: bool = False
-    auto_mitigate: bool = False
     temporal_address: str = ""
     temporal_namespace: str = "default"
     sentry_webhook_secret: str = ""
@@ -67,7 +66,6 @@ class Settings:
             github_base=os.getenv("GITHUB_BASE_BRANCH", "main"),
             sentry_org=os.getenv("SENTRY_ORG", ""),
             dual_repair=os.getenv("DUAL_REPAIR", "0") == "1",
-            auto_mitigate=os.getenv("AUTO_MITIGATE", "0") == "1",
             temporal_address=os.getenv("TEMPORAL_ADDRESS", ""),
             temporal_namespace=os.getenv("TEMPORAL_NAMESPACE", "default"),
             sentry_webhook_secret=os.getenv("SENTRY_WEBHOOK_SECRET", ""),

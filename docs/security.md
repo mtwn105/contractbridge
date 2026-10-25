@@ -42,16 +42,16 @@ audit, Temporal, GitHub, or Sentry records.
 
 ## Review, build, and activation
 
-Contract, mapping, fixture, template, dependency, behavior, and artifact hashes
-bind each decision to exact inputs. A tested candidate is not automatically an
-approved runtime. Activation requires recorded semantic review, passing tests,
-and approval of the exact artifact checksum. Any relevant input drift invalidates
-the decision.
+Contract, mapping, fixture, template, dependency, and artifact hashes bind each
+decision to exact inputs. A tested candidate is not automatically an approved
+runtime. Activation requires an explicit operator approval of the exact candidate
+hash, passing isolated tests, and an activation record for the exact built
+artifact. Any relevant input drift invalidates the decision.
 
-Automatic mitigation is allowed only under an integration-specific policy that
-matches the exact old/current contract, fixtures, normalized mapping behavior,
-and recorded semantic review. Unexpected transformations stop instead of widening
-that policy.
+A rejection records the operator's review comment and sends it to the next model
+proposal as feedback. The comment is not a substitute for validation: schema,
+fixture, and isolated candidate checks still run, and blockers cannot be approved
+away. The control plane has no integration-specific mitigation allowlist.
 
 The control plane has no Docker socket. A separate trusted worker does and should
 be treated as host-sensitive. Generated verification and runtime containers use
