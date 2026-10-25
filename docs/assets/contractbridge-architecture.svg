@@ -1,0 +1,227 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" width="1600" height="1120" role="img" aria-labelledby="cb-title cb-desc">
+  <title id="cb-title">ContractBridge architecture at a glance</title>
+  <desc id="cb-desc">An application calls an upstream API through a scoped ContractBridge gateway. When the contract drifts, the gateway opens an incident. Gemma proposes a constrained JSON mapping, the candidate is validated and verified in isolation, and an operator approves or requests changes. The approved mapping drives two repairs: a temporary deterministic bridge and a permanent client patch. The bridge is retired only after the deployed client is verified with translation bypassed.</desc>
+
+  <defs>
+    <style>
+      .sans { font-family: Ubuntu, "DejaVu Sans", sans-serif; }
+      .h1 { font-size: 32px; font-weight: 700; fill: #17262f; letter-spacing: -0.8px; }
+      .subtitle { font-size: 15.5px; font-weight: 400; fill: #60717b; }
+      .lane { font-size: 12px; font-weight: 700; letter-spacing: 1.4px; }
+      .lane-sub { font-size: 11px; font-weight: 400; fill: #60717b; }
+      .box-title { font-size: 14.5px; font-weight: 600; fill: #17262f; }
+      .box-sub { font-size: 11px; font-weight: 400; fill: #60717b; }
+      .step { font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .label { font-size: 10px; font-weight: 700; letter-spacing: 0.6px; }
+      .badge { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; }
+      .trust { font-size: 11.5px; font-weight: 400; fill: #dcebef; }
+      .trust-label { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; fill: #8da4af; }
+      .blue { fill: #236d91; }
+      .amber { fill: #9a5b1f; }
+      .green { fill: #21725e; }
+      .purple { fill: #6b4c9a; }
+      .muted { fill: #819099; }
+      .red { fill: #a13939; }
+    </style>
+
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="136%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#17262f" flood-opacity="0.08"/>
+    </filter>
+
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#236d91"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9a5b1f"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#21725e"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#819099"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1120" fill="#ffffff"/>
+
+  <!-- Header -->
+  <g class="sans">
+    <text class="h1" x="48" y="58">ContractBridge</text>
+    <text class="subtitle" x="48" y="88">A control plane for API contract drift — recover now, fix permanently, retire the workaround.</text>
+
+    <rect x="1290" y="34" width="262" height="30" rx="15" fill="#e6f3ee" stroke="#21725e"/>
+    <circle cx="1308" cy="49" r="4" fill="#21725e"/>
+    <text class="badge green" x="1320" y="53">HUMAN-APPROVED · DETERMINISTIC</text>
+  </g>
+
+  <!-- Runtime lane -->
+  <g class="sans">
+    <rect x="40" y="120" width="1520" height="230" rx="14" fill="#f4f9fc" stroke="#cfe0e9"/>
+    <text class="lane blue" x="64" y="152">RUNTIME</text>
+    <text class="lane-sub" x="64" y="171">every request</text>
+
+    <g filter="url(#shadow)">
+      <rect x="230" y="190" width="210" height="80" rx="10" fill="#ffffff" stroke="#236d91" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="248" y="222">Application</text>
+    <text class="box-sub" x="248" y="244">scoped gateway token</text>
+
+    <g filter="url(#shadow)">
+      <rect x="520" y="190" width="300" height="80" rx="10" fill="#ffffff" stroke="#236d91" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="538" y="222">ContractBridge gateway</text>
+    <text class="box-sub" x="538" y="244">contract check · route choice</text>
+
+    <g filter="url(#shadow)">
+      <rect x="1230" y="180" width="220" height="100" rx="10" fill="#ffffff" stroke="#60717b" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="1248" y="218">Provider API</text>
+    <text class="box-sub" x="1248" y="240">external service</text>
+
+    <g filter="url(#shadow)">
+      <rect x="900" y="265" width="270" height="70" rx="10" fill="#e8f2f7" stroke="#236d91" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="918" y="295">Approved bridge</text>
+    <text class="box-sub" x="918" y="315">deterministic translation</text>
+
+    <!-- Request path -->
+    <path d="M 440 230 H 520" fill="none" stroke="#236d91" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+    <path d="M 820 210 H 1230" fill="none" stroke="#236d91" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+    <rect x="985" y="190" width="80" height="18" fill="#f4f9fc"/>
+    <text class="label blue" x="1025" y="203" text-anchor="middle">DIRECT</text>
+
+    <path d="M 720 270 V 300 H 900" fill="none" stroke="#236d91" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+    <rect x="760" y="280" width="70" height="18" fill="#f4f9fc"/>
+    <text class="label blue" x="795" y="293" text-anchor="middle">BRIDGE</text>
+    <path d="M 1170 300 H 1200 V 255 H 1230" fill="none" stroke="#236d91" stroke-width="1.8" marker-end="url(#arrow-blue)"/>
+
+    <!-- Drift signal -->
+    <path d="M 620 270 V 380 H 320 V 490" fill="none" stroke="#819099" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#arrow-muted)"/>
+    <rect x="410" y="360" width="150" height="18" fill="#ffffff"/>
+    <text class="label muted" x="485" y="373" text-anchor="middle">contract mismatch</text>
+  </g>
+
+  <!-- Repair lane -->
+  <g class="sans">
+    <rect x="40" y="410" width="1520" height="430" rx="14" fill="#fdf8f2" stroke="#ecd9c4"/>
+    <text class="lane amber" x="64" y="442">REPAIR LOOP</text>
+    <text class="lane-sub" x="64" y="461">no model on the request path</text>
+
+    <g filter="url(#shadow)">
+      <rect x="210" y="490" width="220" height="90" rx="10" fill="#ffffff" stroke="#9a5b1f" stroke-width="1.5"/>
+    </g>
+    <circle cx="232" cy="512" r="12" fill="#9a5b1f"/>
+    <text class="step" x="232" y="516" text-anchor="middle">1</text>
+    <text class="box-title" x="254" y="522">Detect drift</text>
+    <text class="box-sub" x="254" y="545">incident + evidence</text>
+
+    <g filter="url(#shadow)">
+      <rect x="500" y="490" width="240" height="90" rx="10" fill="#ffffff" stroke="#9a5b1f" stroke-width="1.5"/>
+    </g>
+    <circle cx="522" cy="512" r="12" fill="#9a5b1f"/>
+    <text class="step" x="522" y="516" text-anchor="middle">2</text>
+    <text class="box-title" x="544" y="522">Gemma proposes</text>
+    <text class="box-sub" x="544" y="545">constrained JSON mapping</text>
+
+    <g filter="url(#shadow)">
+      <rect x="810" y="490" width="250" height="90" rx="10" fill="#ffffff" stroke="#9a5b1f" stroke-width="1.5"/>
+    </g>
+    <circle cx="832" cy="512" r="12" fill="#9a5b1f"/>
+    <text class="step" x="832" y="516" text-anchor="middle">3</text>
+    <text class="box-title" x="854" y="522">Verify in isolation</text>
+    <text class="box-sub" x="854" y="545">schema · fixtures · sandbox tests</text>
+
+    <g filter="url(#shadow)">
+      <rect x="1130" y="490" width="240" height="90" rx="10" fill="#efeaf7" stroke="#6b4c9a" stroke-width="1.5"/>
+    </g>
+    <circle cx="1152" cy="512" r="12" fill="#6b4c9a"/>
+    <text class="step" x="1152" y="516" text-anchor="middle">4</text>
+    <text class="box-title" x="1174" y="522">Operator review</text>
+    <text class="box-sub" x="1174" y="545">approve or request changes</text>
+
+    <path d="M 430 535 H 500" fill="none" stroke="#9a5b1f" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+    <path d="M 740 535 H 810" fill="none" stroke="#9a5b1f" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+    <path d="M 1060 535 H 1130" fill="none" stroke="#9a5b1f" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+
+    <!-- Rejection feeds the next proposal -->
+    <path d="M 1250 580 V 640 H 620 V 580" fill="none" stroke="#9a5b1f" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#arrow-amber)"/>
+    <rect x="790" y="618" width="280" height="20" fill="#fdf8f2"/>
+    <text class="label amber" x="930" y="632" text-anchor="middle">request changes + comment</text>
+
+    <!-- Approval branches to both repairs -->
+    <path d="M 1370 500 H 1440 V 700 H 360 V 920" fill="none" stroke="#21725e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+    <rect x="750" y="680" width="230" height="20" fill="#fdf8f2"/>
+    <text class="label green" x="865" y="694" text-anchor="middle">approve exact candidate</text>
+
+    <path d="M 1370 520 H 1480 V 820 H 685 V 920" fill="none" stroke="#21725e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+    <rect x="960" y="800" width="220" height="20" fill="#fdf8f2"/>
+    <text class="label green" x="1070" y="814" text-anchor="middle">same approved mapping</text>
+  </g>
+
+  <!-- Outcomes lane -->
+  <g class="sans">
+    <rect x="40" y="860" width="1520" height="200" rx="14" fill="#f2faf7" stroke="#cfe8df"/>
+    <text class="lane green" x="64" y="892">OUTCOMES</text>
+    <text class="lane-sub" x="64" y="911">one approved mapping · two repairs</text>
+
+    <g filter="url(#shadow)">
+      <rect x="210" y="920" width="300" height="100" rx="10" fill="#e6f3ee" stroke="#21725e" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="228" y="948">Temporary runtime repair</text>
+    <text class="box-sub" x="228" y="970">approved bridge · deterministic translation</text>
+    <rect x="228" y="982" width="92" height="20" rx="10" fill="#ffffff" stroke="#21725e"/>
+    <text class="badge green" x="274" y="996" text-anchor="middle">BRIDGE ROUTE</text>
+
+    <g filter="url(#shadow)">
+      <rect x="570" y="920" width="230" height="100" rx="10" fill="#ffffff" stroke="#21725e" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="588" y="948">Permanent code repair</text>
+    <text class="box-sub" x="588" y="970">client patch / draft PR</text>
+    <rect x="588" y="982" width="72" height="20" rx="10" fill="#ffffff" stroke="#21725e"/>
+    <text class="badge green" x="624" y="996" text-anchor="middle">DRAFT PR</text>
+
+    <g filter="url(#shadow)">
+      <rect x="850" y="920" width="210" height="100" rx="10" fill="#ffffff" stroke="#21725e" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="868" y="948">Merge + deploy</text>
+    <text class="box-sub" x="868" y="970">outside ContractBridge</text>
+
+    <g filter="url(#shadow)">
+      <rect x="1110" y="920" width="210" height="100" rx="10" fill="#ffffff" stroke="#21725e" stroke-width="1.5"/>
+    </g>
+    <text class="box-title" x="1128" y="948">Verify native traffic</text>
+    <text class="box-sub" x="1128" y="970">translation bypassed</text>
+
+    <g filter="url(#shadow)">
+      <rect x="1380" y="920" width="170" height="100" rx="10" fill="#ffffff" stroke="#21725e" stroke-width="1.5" stroke-dasharray="5 4"/>
+    </g>
+    <text class="box-title" x="1398" y="948">Retire bridge</text>
+    <text class="box-sub" x="1398" y="970">route back to DIRECT</text>
+
+    <path d="M 800 970 H 850" fill="none" stroke="#21725e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+    <path d="M 1060 970 H 1110" fill="none" stroke="#21725e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+    <path d="M 1320 970 H 1380" fill="none" stroke="#21725e" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+  </g>
+
+  <!-- Trust boundary -->
+  <g class="sans">
+    <rect x="40" y="1066" width="1520" height="38" rx="8" fill="#17262f"/>
+    <text class="trust-label" x="64" y="1090">TRUST BOUNDARY</text>
+
+    <circle cx="230" cy="1085" r="6" fill="#21725e"/>
+    <path d="M 227 1085 l 2 2 l 4 -5" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="trust" x="246" y="1089">Model output is data, not code</text>
+
+    <circle cx="600" cy="1085" r="6" fill="#21725e"/>
+    <path d="M 597 1085 l 2 2 l 4 -5" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="trust" x="616" y="1089">Generated code never executes</text>
+
+    <circle cx="960" cy="1085" r="6" fill="#21725e"/>
+    <path d="M 957 1085 l 2 2 l 4 -5" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="trust" x="976" y="1089">Human approves the exact candidate</text>
+
+    <circle cx="1320" cy="1085" r="6" fill="#21725e"/>
+    <path d="M 1317 1085 l 2 2 l 4 -5" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="trust" x="1336" y="1089">Failed requests are never replayed</text>
+  </g>
+</svg>

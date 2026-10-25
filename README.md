@@ -25,61 +25,30 @@ The synthetic shop is an optional example stack under `examples/`.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph clients["Clients"]
-        OP["Operator browser"]
-        APP["Registered application"]
-    end
+[![ContractBridge architecture: a scoped gateway, a human-approved repair loop, and two repairs from one verified mapping](docs/assets/contractbridge-architecture.png)](docs/assets/contractbridge-architecture.png)
 
-    subgraph control["control network — private"]
-        WEB["web<br/>Next.js console + shop proxy"]
-        API["control-plane<br/>operator API + scoped gateway"]
-        DB[("PostgreSQL<br/>connections · incidents · audit")]
-        GEMMA["Ollama<br/>gemma3:4b"]
-        TEMP["Temporal<br/>durable workflow"]
-        ORCH["orchestrator<br/>phase activities"]
-        WORKER["worker<br/>Docker socket"]
-        ING["ingress<br/>UUID adapter proxy"]
-    end
+*Figure 1. The runtime path, the human-approved repair loop, and the two repairs from one approved mapping. Click to open full size.*
 
-    subgraph isolated["no-network sandbox"]
-        SBX["sandbox container<br/>compile + pytest"]
-    end
+A request goes through a scoped gateway to the upstream API. When the upstream
+contract no longer matches what the registered client expects, ContractBridge
+opens an incident and runs a bounded repair loop:
 
-    subgraph adapters["adapters network — internal"]
-        ADAPTER["approved adapter<br/>deterministic translation"]
-    end
+1. **Detect** the mismatch and preserve the evidence.
+2. **Propose** a constrained JSON mapping with a local Gemma model.
+3. **Verify** the candidate against schemas, fixtures, and isolated tests.
+4. **Review** the exact candidate; approve it or request changes with a comment.
+5. **Repair** with the same approved mapping: a temporary runtime bridge and a
+   permanent client patch / draft PR.
 
-    subgraph external["External services"]
-        UP["Upstream API"]
-        SENTRY["Sentry"]
-        GH["GitHub"]
-    end
+The bridge is retired only after the deployed client is verified with translation
+bypassed. The model never sits on the live request path, and generated model code
+is never executed. Only the worker holds the Docker socket; adapters and the
+verification sandbox run in separate isolation domains.
 
-    OP -->|operator token| WEB
-    WEB --> API
-    APP -->|scoped gateway token| API
-    API -->|one upstream POST| UP
-    API <--> DB
-    API -->|mapping prompt| GEMMA
-    API -->|start / signal| TEMP
-    TEMP <--> ORCH
-    ORCH -->|phase step| API
-    API -->|build job| WORKER
-    WORKER -->|docker create| SBX
-    WORKER -->|start + health check| ADAPTER
-    API -->|route BRIDGE| ADAPTER
-    ADAPTER --> UP
-    ING -->|UUID-addressed adapter| ADAPTER
-    API -->|draft PR| GH
-    SENTRY -->|signed alert| API
-    API -.->|ids only| SENTRY
-```
-
-The model never sits on the live request path. Only the worker holds the Docker
-socket; adapters and the verification sandbox run in separate isolation domains.
-See the [low-level design](docs/low-level-design.md) for sequences and state machines.
+See the [architecture overview](docs/architecture-overview.md) for the one-page
+diagram and the [detailed architecture](docs/architecture.md) for deployment and
+trust boundaries. The [low-level design](docs/low-level-design.md) has the
+sequences and state machines.
 
 ## Safety model
 
@@ -239,6 +208,8 @@ Gemma, remote GitHub, or production evidence.
 
 ## Documentation
 
+- [Architecture at a glance](docs/architecture-overview.md)
+- [Detailed architecture and trust boundaries](docs/architecture.md)
 - [Low-level design and sequence diagrams](docs/low-level-design.md)
 - [Security boundaries](docs/security.md)
 - [Verification and evidence](docs/verification.md)
